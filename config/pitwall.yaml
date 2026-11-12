@@ -1,0 +1,63 @@
+# Pitwall gateway config.
+#
+# Provider keys are read from the environment variables named in
+# api_key_env and never written here. base_url_env lets Docker Compose point
+# the same file at service hostnames.
+
+listen: ":8080"
+
+# Phase 1 stand-in for virtual keys (Phase 2 replaces this with per-developer
+# keys stored as hashes in Postgres). Empty means no auth: local use only.
+dev_keys: []
+
+# Used when an OpenAI-format request without max_tokens goes to an
+# Anthropic-format provider, which requires the field.
+default_max_tokens: 8192
+
+providers:
+  - name: openai
+    kind: openai
+    base_url: https://api.openai.com
+    api_key_env: OPENAI_API_KEY
+    max_tokens_param: max_completion_tokens
+
+  - name: anthropic
+    kind: anthropic
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+
+  # Ollama's OpenAI-compatible endpoint; no key needed.
+  - name: ollama
+    kind: openai
+    base_url: http://localhost:11434
+    base_url_env: OLLAMA_BASE_URL
+
+  # The mock provider serves both formats on one port.
+  - name: mock-openai
+    kind: openai
+    base_url: http://localhost:9000
+    base_url_env: MOCK_BASE_URL
+  - name: mock-anthropic
+    kind: anthropic
+    base_url: http://localhost:9000
+    base_url_env: MOCK_BASE_URL
+
+# Routing rules, first match wins. match uses path.Match globs.
+models:
+  - match: mock-gpt
+    provider: mock-openai
+  - match: mock-claude
+    provider: mock-anthropic
+
+  - match: "claude-*"
+    provider: anthropic
+
+  - match: "gpt-*"
+    provider: openai
+  - match: "o[0-9]*"
+    provider: openai
+
+  # Any local model as ollama/<name>, for example ollama/qwen2.5-coder:7b.
+  - match: "ollama/*"
+    provider: ollama
+    strip_prefix: "ollama/"

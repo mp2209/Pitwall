@@ -1,0 +1,5 @@
+.git
+bin
+dist
+.env
+**/.DS_Store

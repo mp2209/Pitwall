@@ -1,0 +1,175 @@
+# Local stack: gateway, mock provider, Postgres, Redis, Ollama and a
+# self-hosted Langfuse (web, worker, ClickHouse, MinIO).
+#
+# Run from the repo root with `docker compose up` (compose.yaml includes this
+# file). Every password below is a fixed dev-only value for this local stack;
+# never reuse them anywhere reachable from outside your machine.
+
+name: pitwall
+
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://pitwall:pitwall@postgres:5432/langfuse
+  SALT: pitwall-dev-salt
+  # 64 hex characters; dev only. Generate a real one with `openssl rand -hex 32`.
+  ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+  TELEMETRY_ENABLED: "false"
+  NEXTAUTH_URL: http://localhost:3000
+  NEXTAUTH_SECRET: pitwall-dev-nextauth-secret
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_CONNECTION_STRING: redis://redis:6379
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  # Headless setup: an org, a project with fixed API keys the gateway uses
+  # in Phase 3, and a dev login (admin@pitwall.local / pitwall-dev).
+  LANGFUSE_INIT_ORG_ID: pitwall
+  LANGFUSE_INIT_ORG_NAME: Pitwall
+  LANGFUSE_INIT_PROJECT_ID: pitwall
+  LANGFUSE_INIT_PROJECT_NAME: pitwall
+  LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-pitwall-dev
+  LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-pitwall-dev
+  LANGFUSE_INIT_USER_EMAIL: admin@pitwall.local
+  LANGFUSE_INIT_USER_NAME: Pitwall Admin
+  LANGFUSE_INIT_USER_PASSWORD: pitwall-dev
+
+services:
+  gateway:
+    build:
+      context: ..
+    image: pitwall:dev
+    ports: ["8080:8080"]
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      MOCK_BASE_URL: http://mockprovider:9000
+      # On a Mac, native Ollama is much faster than the container (no GPU in
+      # Docker): set OLLAMA_BASE_URL=http://host.docker.internal:11434.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      PITWALL_DATABASE_URL: postgres://pitwall:pitwall@postgres:5432/pitwall?sslmode=disable
+      PITWALL_REDIS_URL: redis://redis:6379/1
+      LANGFUSE_HOST: http://langfuse-web:3000
+      LANGFUSE_PUBLIC_KEY: pk-lf-pitwall-dev
+      LANGFUSE_SECRET_KEY: sk-lf-pitwall-dev
+    depends_on:
+      mockprovider: {condition: service_started}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  mockprovider:
+    image: pitwall:dev
+    build:
+      context: ..
+    entrypoint: ["/usr/local/bin/mockprovider"]
+    healthcheck:
+      disable: true
+    ports: ["9000:9000"]
+    environment:
+      MOCK_DELAY_MS: ${MOCK_DELAY_MS:-0}
+      MOCK_CHUNK_DELAY_MS: ${MOCK_CHUNK_DELAY_MS:-0}
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pitwall
+      POSTGRES_PASSWORD: pitwall
+      POSTGRES_DB: pitwall
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pitwall"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    # Langfuse needs noeviction; budget counters want it too.
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes:
+      - ollama-models:/root/.ollama
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio
+    entrypoint: sh
+    # Create the bucket before starting the server.
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports: ["9090:9000"]
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    environment: *langfuse-env
+    depends_on: &langfuse-deps
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      minio: {condition: service_healthy}
+    restart: unless-stopped
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    ports: ["3000:3000"]
+    environment: *langfuse-env
+    depends_on: *langfuse-deps
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  ollama-models:
+  clickhouse-data:
+  clickhouse-logs:
+  minio-data:

@@ -27,6 +27,9 @@ type MessagesRequest struct {
 	Tools         []Tool          `json:"tools,omitempty"`
 	ToolChoice    *ToolChoice     `json:"tool_choice,omitempty"`
 	Metadata      *Metadata       `json:"metadata,omitempty"`
+	// Speed "fast" asks for fast mode. Read for budget reservations; not
+	// sent to OpenAI-format providers.
+	Speed string `json:"speed,omitempty"`
 }
 
 type Message struct {
@@ -99,20 +102,38 @@ type MessagesResponse struct {
 }
 
 type Usage struct {
-	InputTokens              int64 `json:"input_tokens"`
-	OutputTokens             int64 `json:"output_tokens"`
-	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int64 `json:"cache_read_input_tokens,omitempty"`
+	InputTokens              int64          `json:"input_tokens"`
+	OutputTokens             int64          `json:"output_tokens"`
+	CacheCreationInputTokens int64          `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int64          `json:"cache_read_input_tokens,omitempty"`
+	CacheCreation            *CacheCreation `json:"cache_creation,omitempty"`
+	Speed                    string         `json:"speed,omitempty"`         // "standard" or "fast"
+	InferenceGeo             string         `json:"inference_geo,omitempty"` // for example "us" or "global"
+}
+
+// CacheCreation splits cache writes by lifetime; 1-hour writes cost more.
+type CacheCreation struct {
+	Ephemeral5m int64 `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1h int64 `json:"ephemeral_1h_input_tokens"`
 }
 
 // Metering converts provider usage to the gateway's normalized form.
 func (u Usage) Metering() metering.Usage {
-	return metering.Usage{
+	m := metering.Usage{
 		InputTokens:      u.InputTokens,
 		CachedReadTokens: u.CacheReadInputTokens,
 		CacheWriteTokens: u.CacheCreationInputTokens,
 		OutputTokens:     u.OutputTokens,
+		InferenceGeo:     u.InferenceGeo,
 	}
+	if u.CacheCreation != nil && u.CacheCreation.Ephemeral1h > 0 {
+		m.CacheWrite1hTokens = u.CacheCreation.Ephemeral1h
+		m.CacheWriteTokens = max(u.CacheCreationInputTokens-u.CacheCreation.Ephemeral1h, 0)
+	}
+	if u.Speed == "fast" {
+		m.Speed = "fast"
+	}
+	return m
 }
 
 // Merge folds a later usage report (message_delta) into an earlier one
@@ -131,16 +152,29 @@ func (u *Usage) Merge(later Usage) {
 	if later.OutputTokens > 0 {
 		u.OutputTokens = later.OutputTokens
 	}
+	if later.CacheCreation != nil {
+		u.CacheCreation = later.CacheCreation
+	}
+	if later.Speed != "" {
+		u.Speed = later.Speed
+	}
+	if later.InferenceGeo != "" {
+		u.InferenceGeo = later.InferenceGeo
+	}
 }
 
 // FromMetering builds Anthropic usage from normalized usage.
 func FromMetering(m metering.Usage) Usage {
-	return Usage{
+	u := Usage{
 		InputTokens:              m.InputTokens,
 		OutputTokens:             m.OutputTokens,
-		CacheCreationInputTokens: m.CacheWriteTokens,
+		CacheCreationInputTokens: m.CacheWrites(),
 		CacheReadInputTokens:     m.CachedReadTokens,
 	}
+	if m.CacheWrite1hTokens > 0 {
+		u.CacheCreation = &CacheCreation{Ephemeral5m: m.CacheWriteTokens, Ephemeral1h: m.CacheWrite1hTokens}
+	}
+	return u
 }
 
 // StreamEvent is any event in a Messages stream. ContentBlock and Delta stay

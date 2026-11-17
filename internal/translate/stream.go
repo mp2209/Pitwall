@@ -29,24 +29,31 @@ type Stream interface {
 	Usage() metering.Usage
 }
 
-// counter tracks provider-reported usage and falls back to estimates.
+// counter tracks provider-reported usage and falls back to counting tokens
+// itself when the provider reports none or the stream is cut short.
 type counter struct {
 	usage       metering.Usage
-	inputKnown  bool // provider reported input tokens
-	outputKnown bool // provider reported the final output count
-	promptBytes int
-	outBytes    int
+	inputKnown  bool   // provider reported input tokens
+	outputKnown bool   // provider reported the final output count
+	prompt      []byte // the client's request body, counted only if needed
+	out         strings.Builder
+}
+
+func (c *counter) addOut(parts ...string) {
+	for _, p := range parts {
+		c.out.WriteString(p)
+	}
 }
 
 func (c *counter) result() metering.Usage {
 	u := c.usage
 	if !c.inputKnown {
-		u.InputTokens = metering.EstimateTokens(c.promptBytes)
-		u.CachedReadTokens, u.CacheWriteTokens = 0, 0
+		u.InputTokens = metering.CountTokens(string(c.prompt))
+		u.CachedReadTokens, u.CacheWriteTokens, u.CacheWrite1hTokens = 0, 0, 0
 		u.Estimated = true
 	}
 	if !c.outputKnown {
-		u.OutputTokens = max(u.OutputTokens, metering.EstimateTokens(c.outBytes))
+		u.OutputTokens = max(u.OutputTokens, metering.CountTokens(c.out.String()))
 		u.Estimated = true
 	}
 	return u
@@ -63,8 +70,8 @@ type OpenAIPassthrough struct {
 	stripUsage bool
 }
 
-func NewOpenAIPassthrough(promptBytes int, stripUsage bool) *OpenAIPassthrough {
-	return &OpenAIPassthrough{counter: counter{promptBytes: promptBytes}, stripUsage: stripUsage}
+func NewOpenAIPassthrough(prompt []byte, stripUsage bool) *OpenAIPassthrough {
+	return &OpenAIPassthrough{counter: counter{prompt: prompt}, stripUsage: stripUsage}
 }
 
 func (p *OpenAIPassthrough) Event(ev *sse.Event, w io.Writer) error {
@@ -73,10 +80,10 @@ func (p *OpenAIPassthrough) Event(ev *sse.Event, w io.Writer) error {
 		if json.Unmarshal(ev.Data, &chunk) == nil {
 			for _, c := range chunk.Choices {
 				if c.Delta.Content != nil {
-					p.outBytes += len(*c.Delta.Content)
+					p.addOut(*c.Delta.Content)
 				}
 				for _, tc := range c.Delta.ToolCalls {
-					p.outBytes += len(tc.Function.Name) + len(tc.Function.Arguments)
+					p.addOut(tc.Function.Name, tc.Function.Arguments)
 				}
 			}
 			if chunk.Usage != nil {
@@ -101,8 +108,8 @@ type AnthropicPassthrough struct {
 	raw anthropic.Usage
 }
 
-func NewAnthropicPassthrough(promptBytes int) *AnthropicPassthrough {
-	return &AnthropicPassthrough{counter: counter{promptBytes: promptBytes}}
+func NewAnthropicPassthrough(prompt []byte) *AnthropicPassthrough {
+	return &AnthropicPassthrough{counter: counter{prompt: prompt}}
 }
 
 func (p *AnthropicPassthrough) Event(ev *sse.Event, w io.Writer) error {
@@ -127,12 +134,12 @@ func (p *AnthropicPassthrough) observe(e *anthropic.StreamEvent) {
 	case "content_block_start":
 		var b anthropic.ContentBlock
 		if json.Unmarshal(e.ContentBlock, &b) == nil {
-			p.outBytes += len(b.Name)
+			p.addOut(b.Name)
 		}
 	case "content_block_delta":
 		var d anthropic.BlockDelta
 		if json.Unmarshal(e.Delta, &d) == nil {
-			p.outBytes += len(d.Text) + len(d.PartialJSON)
+			p.addOut(d.Text, d.PartialJSON)
 		}
 	case "message_delta":
 		if e.Usage != nil {
@@ -163,9 +170,9 @@ type AnthropicToOpenAIStream struct {
 	done         bool
 }
 
-func NewAnthropicToOpenAIStream(model string, includeUsage bool, promptBytes int) *AnthropicToOpenAIStream {
+func NewAnthropicToOpenAIStream(model string, includeUsage bool, prompt []byte) *AnthropicToOpenAIStream {
 	return &AnthropicToOpenAIStream{
-		counter:      counter{promptBytes: promptBytes},
+		counter:      counter{prompt: prompt},
 		model:        model,
 		includeUsage: includeUsage,
 		id:           "chatcmpl-pitwall",
@@ -216,7 +223,7 @@ func (s *AnthropicToOpenAIStream) Event(ev *sse.Event, w io.Writer) error {
 		idx := s.nextTool
 		s.nextTool++
 		s.toolIndex[*e.Index] = idx
-		s.outBytes += len(b.Name)
+		s.addOut(b.Name)
 		return writeJSON(w, "", s.chunk(openai.Delta{ToolCalls: []openai.ToolCall{{
 			Index: &idx, ID: b.ID, Type: "function",
 			Function: openai.FunctionCall{Name: b.Name, Arguments: ""},
@@ -232,7 +239,7 @@ func (s *AnthropicToOpenAIStream) Event(ev *sse.Event, w io.Writer) error {
 			if d.Text == "" {
 				return nil
 			}
-			s.outBytes += len(d.Text)
+			s.addOut(d.Text)
 			text := d.Text
 			return writeJSON(w, "", s.chunk(openai.Delta{Content: &text}, nil))
 		case "input_json_delta":
@@ -240,7 +247,7 @@ func (s *AnthropicToOpenAIStream) Event(ev *sse.Event, w io.Writer) error {
 			if !ok || d.PartialJSON == "" {
 				return nil
 			}
-			s.outBytes += len(d.PartialJSON)
+			s.addOut(d.PartialJSON)
 			return writeJSON(w, "", s.chunk(openai.Delta{ToolCalls: []openai.ToolCall{{
 				Index: &idx, Function: openai.FunctionCall{Arguments: d.PartialJSON},
 			}}}, nil))
@@ -318,9 +325,9 @@ type OpenAIToAnthropicStream struct {
 	done      bool
 }
 
-func NewOpenAIToAnthropicStream(model string, promptBytes int) *OpenAIToAnthropicStream {
+func NewOpenAIToAnthropicStream(model string, prompt []byte) *OpenAIToAnthropicStream {
 	return &OpenAIToAnthropicStream{
-		counter:   counter{promptBytes: promptBytes},
+		counter:   counter{prompt: prompt},
 		model:     model,
 		id:        "msg_pitwall",
 		toolBlock: map[int]int{},
@@ -408,7 +415,7 @@ func (s *OpenAIToAnthropicStream) delta(w io.Writer, d openai.Delta) error {
 				return err
 			}
 		}
-		s.outBytes += len(*d.Content)
+		s.addOut(*d.Content)
 		if err := writeJSON(w, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": s.nextBlock - 1,
 			"delta": map[string]string{"type": "text_delta", "text": *d.Content},
@@ -437,12 +444,12 @@ func (s *OpenAIToAnthropicStream) delta(w io.Writer, d openai.Delta) error {
 				return err
 			}
 			s.toolBlock[oi] = block
-			s.outBytes += len(tc.Function.Name)
+			s.addOut(tc.Function.Name)
 		}
 		if tc.Function.Arguments == "" {
 			continue
 		}
-		s.outBytes += len(tc.Function.Arguments)
+		s.addOut(tc.Function.Arguments)
 		if err := writeJSON(w, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": block,
 			"delta": map[string]string{"type": "input_json_delta", "partial_json": tc.Function.Arguments},

@@ -57,3 +57,33 @@ func TestShippedConfigIsValid(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestShippedPricesAreValid(t *testing.T) {
+	prices, err := LoadPrices("../../config/prices.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prices) < 30 {
+		t.Errorf("only %d price rows", len(prices))
+	}
+	for _, p := range prices {
+		if p.Model == "claude-haiku-5-5" && (p.LongContext == nil || p.LongContextThreshold != 100000) {
+			t.Error("haiku 5.5 needs its long-context tier")
+		}
+	}
+}
+
+func TestParsePricesRejectsBadRows(t *testing.T) {
+	_, err := ParsePrices([]byte(`
+prices:
+  - {model: a, input: 1, output: 1, speed: turbo}
+  - {model: b}
+  - {model: c, input: 1, output: 1, effective_from: "May 1"}
+  - {model: d, input: 1, output: 1, long_context: {input: 2}}
+`))
+	for _, want := range []string{"speed must be", "rates are missing", "YYYY-MM-DD", "needs a threshold"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q: %v", want, err)
+		}
+	}
+}

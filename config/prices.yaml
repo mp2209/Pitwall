@@ -1,0 +1,89 @@
+# Pitwall price table: USD per million tokens, first-party API rates.
+#
+# Rows are matched to the model name sent to the provider: exact name first,
+# then the same name without a snapshot date (claude-sonnet-4-5-20250929 ->
+# claude-sonnet-4-5), then the longest "prefix*" row.
+#
+# With a database, these rows are copied into model_prices at startup;
+# existing rows are never modified. To change a price, add a row with a
+# later effective_from (here or via POST /admin/prices) so earlier calls
+# keep the price they were billed at. Rows without effective_from apply
+# from the beginning of time.
+#
+# Fields: input, cache_write (5-minute), cache_write_1h, cached_read, output;
+# speed: fast for fast-mode rows; long_context for prompt-length tiers;
+# us_multiplier for Anthropic's US-only inference (inference_geo "us").
+#
+# Sources, read 2026-11-16 — check them before relying on these numbers:
+#   Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
+#   OpenAI:    https://developers.openai.com/api/docs/pricing (Standard tier)
+
+prices:
+  # --- Anthropic -----------------------------------------------------------
+  # Cache writes are 1.25x (5m) and 2x (1h) input; cache reads 0.1x input,
+  # except 0.025x on Fable/Mythos 5.1-5.2 and 0.05x on Opus 5.5 / Sonnet 5.5.
+  - {model: claude-fable-5-2,  input: 8,  cache_write: 10,    cache_write_1h: 16, cached_read: 0.20, output: 40, us_multiplier: 1.1}
+  - {model: claude-mythos-5-2, input: 8,  cache_write: 10,    cache_write_1h: 16, cached_read: 0.20, output: 40, us_multiplier: 1.1}
+  - {model: claude-fable-5-1,  input: 10, cache_write: 12.50, cache_write_1h: 20, cached_read: 0.25, output: 50, us_multiplier: 1.1}
+  - {model: claude-mythos-5-1, input: 10, cache_write: 12.50, cache_write_1h: 20, cached_read: 0.25, output: 50, us_multiplier: 1.1}
+  - {model: claude-fable-5,    input: 10, cache_write: 12.50, cache_write_1h: 20, cached_read: 1,    output: 50, us_multiplier: 1.1}
+  - {model: claude-opus-5-5,   input: 4,  cache_write: 5,     cache_write_1h: 8,  cached_read: 0.20, output: 20, us_multiplier: 1.1}
+  - {model: claude-opus-5,     input: 5,  cache_write: 6.25,  cache_write_1h: 10, cached_read: 0.50, output: 25, us_multiplier: 1.1}
+  - {model: claude-opus-4-8,   input: 5,  cache_write: 6.25,  cache_write_1h: 10, cached_read: 0.50, output: 25, us_multiplier: 1.1}
+  - {model: claude-opus-4-7,   input: 5,  cache_write: 6.25,  cache_write_1h: 10, cached_read: 0.50, output: 25, us_multiplier: 1.1}
+  - {model: claude-opus-4-6,   input: 5,  cache_write: 6.25,  cache_write_1h: 10, cached_read: 0.50, output: 25, us_multiplier: 1.1}
+  - {model: claude-opus-4-5,   input: 5,  cache_write: 6.25,  cache_write_1h: 10, cached_read: 0.50, output: 25}
+  - {model: claude-sonnet-5-5, input: 2,  cache_write: 2.50,  cache_write_1h: 4,  cached_read: 0.10, output: 10, us_multiplier: 1.1}
+  - {model: claude-sonnet-5,   input: 2,  cache_write: 2.50,  cache_write_1h: 4,  cached_read: 0.20, output: 10, us_multiplier: 1.1}
+  - {model: claude-sonnet-4-6, input: 3,  cache_write: 3.75,  cache_write_1h: 6,  cached_read: 0.30, output: 15, us_multiplier: 1.1}
+  - {model: claude-sonnet-4-5, input: 3,  cache_write: 3.75,  cache_write_1h: 6,  cached_read: 0.30, output: 15}
+  - {model: claude-haiku-4-5,  input: 1,  cache_write: 1.25,  cache_write_1h: 2,  cached_read: 0.10, output: 5}
+  # Haiku 5.5 is priced by prompt length; the prompt counts cache reads and
+  # writes, and the whole call pays the higher rates once it is over 100k.
+  - model: claude-haiku-5-5
+    input: 0.10
+    cache_write: 0.125
+    cache_write_1h: 0.20
+    cached_read: 0.01
+    output: 0.50
+    us_multiplier: 1.1
+    long_context: {threshold: 100000, input: 0.50, cache_write: 0.625, cache_write_1h: 1, cached_read: 0.05, output: 2.50}
+
+  # Fast mode (speed: "fast" in the request; usage.speed reports it). Cache
+  # multipliers apply on top of the fast input rate.
+  - {model: claude-fable-5-2,  speed: fast, input: 16, cache_write: 20,   cache_write_1h: 32, cached_read: 0.40, output: 80, us_multiplier: 1.1}
+  - {model: claude-mythos-5-2, speed: fast, input: 16, cache_write: 20,   cache_write_1h: 32, cached_read: 0.40, output: 80, us_multiplier: 1.1}
+  - {model: claude-opus-5-5,   speed: fast, input: 8,  cache_write: 10,   cache_write_1h: 16, cached_read: 0.40, output: 40, us_multiplier: 1.1}
+  - {model: claude-opus-5,     speed: fast, input: 10, cache_write: 12.5, cache_write_1h: 20, cached_read: 1,    output: 50, us_multiplier: 1.1}
+  - {model: claude-opus-4-8,   speed: fast, input: 10, cache_write: 12.5, cache_write_1h: 20, cached_read: 1,    output: 50, us_multiplier: 1.1}
+
+  # --- OpenAI (Standard tier) ----------------------------------------------
+  # OpenAI caches automatically and charges nothing to write; flagship models
+  # cost more for prompts over 272k input tokens.
+  - {model: gpt-6-astra,   input: 10,   cached_read: 1,    output: 50, long_context: {threshold: 272000, input: 20,   cached_read: 2,    output: 75}}
+  - {model: gpt-6.1-sol,   input: 2,    cached_read: 0.10, output: 10, long_context: {threshold: 272000, input: 4,    cached_read: 0.20, output: 15}}
+  - {model: gpt-6.1-terra, input: 1,    cached_read: 0.05, output: 5,  long_context: {threshold: 272000, input: 2,    cached_read: 0.10, output: 7.50}}
+  - {model: gpt-6-sol,     input: 2,    cached_read: 0.20, output: 10, long_context: {threshold: 272000, input: 4,    cached_read: 0.40, output: 15}}
+  - {model: gpt-6-luna,    input: 0.10, cached_read: 0.01, output: 0.50, long_context: {threshold: 272000, input: 0.20, cached_read: 0.02, output: 0.75}}
+  - {model: gpt-5.6-sol,   input: 4,    cached_read: 0.40, output: 20, long_context: {threshold: 272000, input: 8,    cached_read: 0.80, output: 30}}
+  - {model: gpt-5.6-terra, input: 2,    cached_read: 0.20, output: 12, long_context: {threshold: 272000, input: 4,    cached_read: 0.40, output: 18}}
+  - {model: gpt-5.6-luna,  input: 0.20, cached_read: 0.02, output: 1.20, long_context: {threshold: 272000, input: 0.40, cached_read: 0.04, output: 1.80}}
+  - {model: gpt-5.5,       input: 5,    cached_read: 0.50, output: 30, long_context: {threshold: 272000, input: 10,   cached_read: 1,    output: 45}}
+  - {model: gpt-5.4,       input: 2.50, cached_read: 0.25, output: 15, long_context: {threshold: 272000, input: 5,    cached_read: 0.50, output: 22.50}}
+  - {model: gpt-5.4-mini,  input: 0.75, cached_read: 0.075, output: 4.50}
+  - {model: gpt-5.4-nano,  input: 0.20, cached_read: 0.02, output: 1.25}
+  - {model: gpt-5.2,       input: 1.75, cached_read: 0.175, output: 14}
+  - {model: gpt-5.1,       input: 1.25, cached_read: 0.125, output: 10}
+  - {model: gpt-5,         input: 1.25, cached_read: 0.125, output: 10}
+  - {model: gpt-5-mini,    input: 0.25, cached_read: 0.025, output: 2}
+  - {model: gpt-5-nano,    input: 0.05, cached_read: 0.005, output: 0.40}
+  - {model: gpt-4.1,       input: 2,    cached_read: 0.50, output: 8}
+  - {model: gpt-4.1-mini,  input: 0.40, cached_read: 0.10, output: 1.60}
+  - {model: gpt-4o,        input: 2.50, cached_read: 1.25, output: 10}
+  - {model: gpt-4o-mini,   input: 0.15, cached_read: 0.075, output: 0.60}
+  - {model: o3,            input: 2,    cached_read: 0.50, output: 8}
+
+  # --- Mock provider ---------------------------------------------------------
+  # Round made-up numbers so tests and demos produce visible, checkable costs.
+  - {model: mock-claude, input: 3, cache_write: 3.75, cache_write_1h: 6, cached_read: 0.30, output: 15}
+  - {model: mock-gpt,    input: 2, cached_read: 0.50, output: 8}

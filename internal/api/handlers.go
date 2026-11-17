@@ -40,7 +40,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			// Always ask for the final usage chunk; the passthrough strips
 			// it again if the client did not ask.
 			set["stream_options"] = mergeStreamOptions(body)
-			ex.streamer = translate.NewOpenAIPassthrough(len(body), !clientWantsUsage)
+			ex.streamer = translate.NewOpenAIPassthrough(body, !clientWantsUsage)
 		}
 		up, err := patchBody(body, set)
 		if err != nil {
@@ -69,7 +69,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		ex.path, ex.body = "/v1/messages", up
 		if req.Stream {
-			ex.streamer = translate.NewAnthropicToOpenAIStream(req.Model, clientWantsUsage, len(body))
+			ex.streamer = translate.NewAnthropicToOpenAIStream(req.Model, clientWantsUsage, body)
 		}
 		ex.convert = func(b []byte) ([]byte, metering.Usage, error) {
 			var resp anthropic.MessagesResponse
@@ -110,7 +110,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		ex.path, ex.rawQuery, ex.body = "/v1/messages", r.URL.RawQuery, up
 		if req.Stream {
-			ex.streamer = translate.NewAnthropicPassthrough(len(body))
+			ex.streamer = translate.NewAnthropicPassthrough(body)
 		}
 		ex.convert = func(b []byte) ([]byte, metering.Usage, error) {
 			var resp anthropic.MessagesResponse
@@ -133,7 +133,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		ex.path, ex.body = "/v1/chat/completions", up
 		if req.Stream {
-			ex.streamer = translate.NewOpenAIToAnthropicStream(req.Model, len(body))
+			ex.streamer = translate.NewOpenAIToAnthropicStream(req.Model, body)
 		}
 		ex.convert = func(b []byte) ([]byte, metering.Usage, error) {
 			var resp openai.ChatResponse

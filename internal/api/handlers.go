@@ -26,7 +26,14 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, format, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
-	c, ok := s.newCall(w, format, req.Model, req.Stream, len(body))
+	maxOutput := int64(s.cfg.DefaultMaxTokens)
+	switch {
+	case req.MaxCompletionTokens != nil:
+		maxOutput = int64(*req.MaxCompletionTokens)
+	case req.MaxTokens != nil:
+		maxOutput = int64(*req.MaxTokens)
+	}
+	c, ok := s.newCall(w, r, callSpec{format: format, model: req.Model, stream: req.Stream, body: body, maxOutput: maxOutput})
 	if !ok {
 		return
 	}
@@ -95,7 +102,11 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, format, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
-	c, ok := s.newCall(w, format, req.Model, req.Stream, len(body))
+	maxOutput := int64(req.MaxTokens)
+	if maxOutput <= 0 {
+		maxOutput = int64(s.cfg.DefaultMaxTokens)
+	}
+	c, ok := s.newCall(w, r, callSpec{format: format, model: req.Model, stream: req.Stream, body: body, maxOutput: maxOutput, speed: req.Speed})
 	if !ok {
 		return
 	}
@@ -163,13 +174,17 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		writeError(w, format, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
+	if key := keyFrom(r.Context()); key != nil && !key.AllowsModel(req.Model) {
+		writeError(w, format, http.StatusForbidden, fmt.Sprintf("Pitwall key %s may not use model %q", key.Prefix, req.Model))
+		return
+	}
 	route, found := s.router.Resolve(req.Model)
 	if !found {
 		writeError(w, format, http.StatusNotFound, fmt.Sprintf("model %q is not configured on this gateway", req.Model))
 		return
 	}
 	if route.Upstream.Kind != config.KindAnthropic {
-		writeJSON(w, http.StatusOK, map[string]int64{"input_tokens": metering.EstimateTokens(len(body))})
+		writeJSON(w, http.StatusOK, map[string]int64{"input_tokens": metering.CountTokens(string(body))})
 		return
 	}
 	up, err := patchBody(body, map[string]any{"model": route.Model})
@@ -193,26 +208,49 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
-// newCall resolves the model and starts the call's bookkeeping, writing an
-// error and returning false if the model is unknown.
-func (s *Server) newCall(w http.ResponseWriter, format, model string, stream bool, promptLen int) (*call, bool) {
-	if model == "" {
-		writeError(w, format, http.StatusBadRequest, "model is required")
+// callSpec is what a handler learned from the request body.
+type callSpec struct {
+	format    string
+	model     string
+	stream    bool
+	body      []byte
+	maxOutput int64
+	speed     string
+}
+
+// newCall resolves the model, checks the key may use it and starts the
+// call's bookkeeping, writing an error and returning false if it can't go on.
+func (s *Server) newCall(w http.ResponseWriter, r *http.Request, spec callSpec) (*call, bool) {
+	if spec.model == "" {
+		writeError(w, spec.format, http.StatusBadRequest, "model is required")
 		return nil, false
 	}
-	route, found := s.router.Resolve(model)
-	if !found {
-		writeError(w, format, http.StatusNotFound, fmt.Sprintf("model %q is not configured on this gateway", model))
+	key := keyFrom(r.Context())
+	if key != nil && !key.AllowsModel(spec.model) {
+		writeError(w, spec.format, http.StatusForbidden,
+			fmt.Sprintf("Pitwall key %s may not use model %q", key.Prefix, spec.model))
 		return nil, false
+	}
+	route, found := s.router.Resolve(spec.model)
+	if !found {
+		writeError(w, spec.format, http.StatusNotFound, fmt.Sprintf("model %q is not configured on this gateway", spec.model))
+		return nil, false
+	}
+	speed := ""
+	if spec.speed == "fast" {
+		speed = "fast"
 	}
 	return &call{
 		id:        newRequestID(),
 		start:     time.Now(),
-		format:    format,
-		model:     model,
+		format:    spec.format,
+		model:     spec.model,
 		route:     route,
-		stream:    stream,
-		promptLen: promptLen,
+		stream:    spec.stream,
+		prompt:    spec.body,
+		maxOutput: spec.maxOutput,
+		speed:     speed,
+		key:       key,
 	}, true
 }
 

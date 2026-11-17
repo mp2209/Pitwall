@@ -1,8 +1,10 @@
-// Package api serves the gateway's two client-facing formats:
-// POST /v1/chat/completions (OpenAI) and POST /v1/messages (Anthropic).
+// Package api serves the gateway's two client-facing formats,
+// POST /v1/chat/completions (OpenAI) and POST /v1/messages (Anthropic), and
+// the admin API under /admin.
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -11,33 +13,56 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/mp2209/pitwall/internal/auth"
 	"github.com/mp2209/pitwall/internal/config"
+	"github.com/mp2209/pitwall/internal/metering"
 	"github.com/mp2209/pitwall/internal/providers"
+	"github.com/mp2209/pitwall/internal/store"
 )
 
 // Server is the gateway's HTTP handler set.
 type Server struct {
-	cfg      *config.Config
-	router   *providers.Router
-	client   *http.Client
-	recorder Recorder
-	log      *slog.Logger
+	cfg        *config.Config
+	router     *providers.Router
+	client     *http.Client
+	recorder   Recorder
+	log        *slog.Logger
+	keys       *auth.Authenticator
+	store      *store.Store
+	prices     *metering.PriceBook
+	budget     *metering.Budget
+	adminToken string
+
+	unpriced sync.Map // model names already warned about
 }
 
-// Options configures a Server. Zero values get defaults.
+// Options configures a Server. Everything is optional: with no Keys the
+// gateway runs in dev mode (Config.DevKeys or no auth), with no Budget calls
+// are not budgeted, and with no Store there is no admin API.
 type Options struct {
 	Client   *http.Client
 	Recorder Recorder
 	Log      *slog.Logger
+	Keys     *auth.Authenticator
+	Store    *store.Store
+	Prices   *metering.PriceBook
+	Budget   *metering.Budget
+	// AdminToken, if set, is accepted as a bearer token on /admin besides
+	// keys whose user has the admin role. It bootstraps the first admin.
+	AdminToken string
 }
 
 func New(cfg *config.Config, opts Options) *Server {
-	s := &Server{cfg: cfg, router: providers.NewRouter(cfg), client: opts.Client, recorder: opts.Recorder, log: opts.Log}
+	s := &Server{
+		cfg: cfg, router: providers.NewRouter(cfg), client: opts.Client, recorder: opts.Recorder, log: opts.Log,
+		keys: opts.Keys, store: opts.Store, prices: opts.Prices, budget: opts.Budget, adminToken: opts.AdminToken,
+	}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -46,6 +71,9 @@ func New(cfg *config.Config, opts Options) *Server {
 	}
 	if s.recorder == nil {
 		s.recorder = LogRecorder{Log: s.log}
+	}
+	if s.prices == nil {
+		s.prices = metering.NewPriceBook(nil)
 	}
 	return s
 }
@@ -64,6 +92,9 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/v1/messages", s.handleMessages)
 		r.Post("/v1/messages/count_tokens", s.handleCountTokens)
 	})
+	if s.store != nil {
+		r.Route("/admin", s.adminRoutes)
+	}
 	return r
 }
 
@@ -88,10 +119,36 @@ func clientKey(r *http.Request) string {
 	return ""
 }
 
-// authenticate is the Phase 1 stand-in for virtual keys: a fixed list of
-// dev keys from the config, or no check at all when the list is empty.
+type ctxKey struct{}
+
+func withKey(ctx context.Context, k *auth.Key) context.Context {
+	return context.WithValue(ctx, ctxKey{}, k)
+}
+
+// keyFrom returns the caller's virtual key, or nil in dev mode.
+func keyFrom(ctx context.Context) *auth.Key {
+	k, _ := ctx.Value(ctxKey{}).(*auth.Key)
+	return k
+}
+
+// authenticate checks virtual keys when a key store is configured, and
+// otherwise falls back to the dev_keys list (or no check if it is empty).
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.keys != nil {
+			k, err := s.keys.Authenticate(r.Context(), clientKey(r))
+			switch {
+			case errors.Is(err, auth.ErrInvalidKey), errors.Is(err, auth.ErrRevokedKey):
+				writeError(w, clientFormat(r), http.StatusUnauthorized, err.Error())
+				return
+			case err != nil:
+				s.log.Error("key lookup failed", "err", err)
+				writeError(w, clientFormat(r), http.StatusServiceUnavailable, "Pitwall could not check the API key; try again shortly")
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(withKey(r.Context(), k)))
+			return
+		}
 		if len(s.cfg.DevKeys) == 0 {
 			next.ServeHTTP(w, r)
 			return
@@ -103,12 +160,18 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		}
-		writeError(w, clientFormat(r), http.StatusUnauthorized, "invalid or missing Pitwall API key")
+		writeError(w, clientFormat(r), http.StatusUnauthorized, auth.ErrInvalidKey.Error())
 	})
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	models := s.router.Models()
+	var models []providers.ListedModel
+	key := keyFrom(r.Context())
+	for _, m := range s.router.Models() {
+		if key == nil || key.AllowsModel(m.ID) {
+			models = append(models, m)
+		}
+	}
 	if clientFormat(r) == config.KindAnthropic {
 		type model struct {
 			ID          string `json:"id"`
@@ -169,11 +232,16 @@ type call struct {
 	model     string // what the client asked for
 	route     providers.Route
 	stream    bool
-	promptLen int
+	prompt    []byte // the client's request body
+	maxOutput int64  // output token limit, for the budget's worst case
+	speed     string // "fast" if the client asked for fast mode
+	key       *auth.Key
+
+	reservation *metering.Reservation
 }
 
 func (c *call) record() Record {
-	return Record{
+	r := Record{
 		ID:            c.id,
 		Time:          c.start,
 		ClientFormat:  c.format,
@@ -182,4 +250,8 @@ func (c *call) record() Record {
 		Provider:      c.route.Upstream.Name,
 		Stream:        c.stream,
 	}
+	if c.key != nil {
+		r.KeyID, r.KeyPrefix, r.TeamID = c.key.ID, c.key.Prefix, c.key.TeamID
+	}
+	return r
 }

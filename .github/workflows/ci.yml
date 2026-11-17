@@ -10,6 +10,25 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Store, budget and full-stack tests skip without these; CI always runs them.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pitwall
+          POSTGRES_PASSWORD: pitwall
+          POSTGRES_DB: pitwall_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pitwall" --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      PITWALL_TEST_DATABASE_URL: postgres://pitwall:pitwall@localhost:5432/pitwall_test?sslmode=disable
+      PITWALL_TEST_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

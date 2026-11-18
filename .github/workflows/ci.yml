@@ -16,8 +16,10 @@ jobs:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: pitwall
-          POSTGRES_PASSWORD: pitwall
           POSTGRES_DB: pitwall_test
+          # Throwaway container only this job can reach, so it uses trust
+          # auth and the repo holds no credential for it.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U pitwall" --health-interval 2s --health-timeout 3s --health-retries 30
@@ -27,7 +29,7 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
     env:
-      PITWALL_TEST_DATABASE_URL: postgres://pitwall:pitwall@localhost:5432/pitwall_test?sslmode=disable
+      PITWALL_TEST_DATABASE_URL: postgres://pitwall@localhost:5432/pitwall_test?sslmode=disable
       PITWALL_TEST_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v5

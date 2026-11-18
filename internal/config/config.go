@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -34,9 +35,15 @@ type Config struct {
 	PricesFile string `yaml:"prices_file"`
 	// BudgetFailOpen lets calls through when Redis is unreachable, logging
 	// the failure, instead of refusing them. Default true.
-	BudgetFailOpen *bool      `yaml:"budget_fail_open"`
-	Providers      []Provider `yaml:"providers"`
-	Models         []Model    `yaml:"models"`
+	BudgetFailOpen *bool `yaml:"budget_fail_open"`
+	// TaskIdleGap closes an inferred task: a call after this long without
+	// one starts a new task. Default 5m.
+	TaskIdleGap time.Duration `yaml:"task_idle_gap"`
+	// MetricsListen serves Prometheus metrics on a separate address, kept
+	// off the public port. Empty disables metrics. Default ":9464".
+	MetricsListen *string    `yaml:"metrics_listen"`
+	Providers     []Provider `yaml:"providers"`
+	Models        []Model    `yaml:"models"`
 
 	dir string // directory of the config file, for relative paths
 }
@@ -126,6 +133,13 @@ func (c *Config) applyDefaults() {
 	}
 	if c.PricesFile == "" {
 		c.PricesFile = "prices.yaml"
+	}
+	if c.TaskIdleGap == 0 {
+		c.TaskIdleGap = 5 * time.Minute
+	}
+	if c.MetricsListen == nil {
+		addr := ":9464"
+		c.MetricsListen = &addr
 	}
 	for i := range c.Providers {
 		p := &c.Providers[i]

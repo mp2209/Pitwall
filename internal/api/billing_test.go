@@ -252,3 +252,15 @@ func TestModelsListFollowsAllowList(t *testing.T) {
 		t.Errorf("models = %+v, want only mock-gpt and mock-claude", v.Data)
 	}
 }
+
+type panickyRecorder struct{}
+
+func (panickyRecorder) Record(context.Context, Record) { panic("boom") }
+
+func TestRecordersIsolatePanics(t *testing.T) {
+	first, last := newCapture(), newCapture()
+	Recorders{first, panickyRecorder{}, last}.Record(context.Background(), Record{ID: "pw_1"})
+	if first.next(t).ID != "pw_1" || last.next(t).ID != "pw_1" {
+		t.Fatal("recorders around a panicking one must still run")
+	}
+}

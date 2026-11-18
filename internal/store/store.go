@@ -411,3 +411,14 @@ func (s *Store) SpendSince(ctx context.Context, scopeID string, since time.Time)
 		id, since).Scan(&nanos)
 	return metering.Nanos(nanos), err
 }
+
+// Exec runs a statement and discards its rows. Tests use it to check that
+// queries written elsewhere (dashboards) still match the schema.
+func (s *Store) Exec(ctx context.Context, sql string) error {
+	rows, err := s.pool.Query(ctx, sql)
+	if err != nil {
+		return err
+	}
+	rows.Close()
+	return rows.Err()
+}

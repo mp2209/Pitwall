@@ -44,13 +44,28 @@ type RequestRow struct {
 	OverheadMS         float32        `json:"overhead_ms"`
 	ClientGone         bool           `json:"client_gone"`
 	Error              string         `json:"error"`
+
+	InferredTaskID      *string `json:"inferred_task_id"`
+	RepeatedInputTokens int64   `json:"repeated_input_tokens"`
+
+	// Task attributes, used to create or update the task's row; not
+	// columns of requests.
+	TaskSource     string `json:"-"`
+	TaskExternalID string `json:"-"`
+	Agent          string `json:"-"`
+	ConfigLabel    string `json:"-"`
+}
+
+// PromptTokens is all input of the call, cached or not: its context size.
+func (r RequestRow) PromptTokens() int64 {
+	return r.InputTokens + r.CachedReadTokens + r.CacheWriteTokens + r.CacheWrite1hTokens
 }
 
 var requestColumns = []string{
 	"id", "ts", "task_id", "key_id", "team_id", "client_format", "model", "upstream_model", "provider",
 	"stream", "status", "input_tokens", "cached_read_tokens", "cache_write_tokens", "cache_write_1h_tokens",
 	"output_tokens", "speed", "inference_geo", "estimated", "priced", "cost_usd", "reserved_usd",
-	"latency_ms", "ttft_ms", "overhead_ms", "client_gone", "error",
+	"latency_ms", "ttft_ms", "overhead_ms", "client_gone", "error", "inferred_task_id", "repeated_input_tokens",
 }
 
 // usdNumeric stores nanodollars exactly as numeric(18,9).
@@ -58,19 +73,26 @@ func usdNumeric(n metering.Nanos) pgtype.Numeric {
 	return pgtype.Numeric{Int: big.NewInt(int64(n)), Exp: -9, Valid: true}
 }
 
-// InsertRequests writes rows with COPY, the fastest bulk path.
+// InsertRequests writes rows with COPY, the fastest bulk path, and folds
+// them into their tasks' totals in the same transaction, so a task row
+// always agrees with its calls.
 func (s *Store) InsertRequests(ctx context.Context, rows []RequestRow) error {
-	_, err := s.pool.CopyFrom(ctx, pgx.Identifier{"requests"}, requestColumns,
-		pgx.CopyFromSlice(len(rows), func(i int) ([]any, error) {
-			r := rows[i]
-			return []any{
-				r.ID, r.Time, r.TaskID, r.KeyID, r.TeamID, r.ClientFormat, r.Model, r.UpstreamModel, r.Provider,
-				r.Stream, r.Status, r.InputTokens, r.CachedReadTokens, r.CacheWriteTokens, r.CacheWrite1hTokens,
-				r.OutputTokens, r.Speed, r.InferenceGeo, r.Estimated, r.Priced, usdNumeric(r.Cost), usdNumeric(r.Reserved),
-				r.LatencyMS, r.TTFTMS, r.OverheadMS, r.ClientGone, r.Error,
-			}, nil
-		}))
-	return err
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		_, err := tx.CopyFrom(ctx, pgx.Identifier{"requests"}, requestColumns,
+			pgx.CopyFromSlice(len(rows), func(i int) ([]any, error) {
+				r := rows[i]
+				return []any{
+					r.ID, r.Time, r.TaskID, r.KeyID, r.TeamID, r.ClientFormat, r.Model, r.UpstreamModel, r.Provider,
+					r.Stream, r.Status, r.InputTokens, r.CachedReadTokens, r.CacheWriteTokens, r.CacheWrite1hTokens,
+					r.OutputTokens, r.Speed, r.InferenceGeo, r.Estimated, r.Priced, usdNumeric(r.Cost), usdNumeric(r.Reserved),
+					r.LatencyMS, r.TTFTMS, r.OverheadMS, r.ClientGone, r.Error, r.InferredTaskID, r.RepeatedInputTokens,
+				}, nil
+			}))
+		if err != nil {
+			return err
+		}
+		return upsertTasks(ctx, tx, rows)
+	})
 }
 
 // RecentRequests lists the newest calls, optionally for one key.
@@ -81,7 +103,8 @@ func (s *Store) RecentRequests(ctx context.Context, keyID int64, limit int) ([]R
 	rows, err := s.pool.Query(ctx, `SELECT id, ts, task_id, key_id, team_id, client_format, model, upstream_model,
 		provider, stream, status, input_tokens, cached_read_tokens, cache_write_tokens, cache_write_1h_tokens,
 		output_tokens, speed, inference_geo, estimated, priced, (cost_usd * 1000000000)::bigint,
-		(reserved_usd * 1000000000)::bigint, latency_ms, ttft_ms, overhead_ms, client_gone, error
+		(reserved_usd * 1000000000)::bigint, latency_ms, ttft_ms, overhead_ms, client_gone, error,
+		inferred_task_id, repeated_input_tokens
 		FROM requests WHERE ($1 = 0 OR key_id = $1) ORDER BY ts DESC LIMIT $2`, keyID, limit)
 	if err != nil {
 		return nil, err
@@ -91,7 +114,8 @@ func (s *Store) RecentRequests(ctx context.Context, keyID int64, limit int) ([]R
 		err := row.Scan(&r.ID, &r.Time, &r.TaskID, &r.KeyID, &r.TeamID, &r.ClientFormat, &r.Model, &r.UpstreamModel,
 			&r.Provider, &r.Stream, &r.Status, &r.InputTokens, &r.CachedReadTokens, &r.CacheWriteTokens,
 			&r.CacheWrite1hTokens, &r.OutputTokens, &r.Speed, &r.InferenceGeo, &r.Estimated, &r.Priced,
-			&r.Cost, &r.Reserved, &r.LatencyMS, &r.TTFTMS, &r.OverheadMS, &r.ClientGone, &r.Error)
+			&r.Cost, &r.Reserved, &r.LatencyMS, &r.TTFTMS, &r.OverheadMS, &r.ClientGone, &r.Error,
+			&r.InferredTaskID, &r.RepeatedInputTokens)
 		r.CostUSD = r.Cost.USD()
 		return r, err
 	})

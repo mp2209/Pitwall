@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mp2209/pitwall/internal/metering"
+	"github.com/mp2209/pitwall/internal/tasks"
 )
 
 // budgetTimeout bounds each Redis round trip on the request path.
@@ -71,11 +72,32 @@ func (s *Server) priceCall(ex *exchange, rec *Record) {
 		return
 	}
 	rec.Cost = p.Cost(rec.Usage)
+	rec.CacheSavings = p.UncachedCost(rec.Usage) - rec.Cost
+}
+
+// assignTask places the call in its task. A failure is logged and the call
+// goes on untracked: tracking must never block an agent.
+func (s *Server) assignTask(ctx context.Context, ex *exchange, rec *Record) {
+	var keyID int64
+	if ex.key != nil {
+		keyID = ex.key.ID
+	}
+	actx, cancel := context.WithTimeout(ctx, budgetTimeout)
+	defer cancel()
+	a, err := s.tracker.Assign(actx, tasks.Request{KeyID: keyID, Header: ex.taskHeader, Conv: ex.conv})
+	if err != nil {
+		s.log.Warn("task assignment incomplete", "err", err, "id", ex.id)
+	}
+	ex.assignment = a
+	rec.TaskID, rec.TaskSource, rec.TaskExternalID = a.TaskID, a.Source, a.ExternalID
+	rec.InferredTaskID, rec.CallIndex, rec.TaskStart = a.InferredTaskID, a.CallIndex, a.TaskStart
+	rec.NewMessages = ex.conv.NewMessages(a.SharedPieces)
 }
 
 // finish prices the call and settles its reservation.
 func (s *Server) finish(ctx context.Context, ex *exchange, rec *Record) {
 	s.priceCall(ex, rec)
+	rec.RepeatedInputTokens = ex.assignment.RepeatedTokens(rec.Usage.PromptTokens())
 	if ex.reservation == nil || s.budget == nil {
 		return
 	}

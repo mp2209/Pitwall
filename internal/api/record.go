@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/mp2209/pitwall/internal/metering"
 	"github.com/mp2209/pitwall/internal/store"
+	"github.com/mp2209/pitwall/internal/tasks"
 )
 
 // Record describes one model call once it has finished.
@@ -32,6 +34,24 @@ type Record struct {
 	Cost      metering.Nanos
 	Priced    bool           // a price row (or a free provider) covered the call
 	Reserved  metering.Nanos // worst case held against the budget
+	// CacheSavings is what the call would have cost without prompt caching,
+	// minus what it cost (negative when cache writes outweigh reads).
+	CacheSavings metering.Nanos
+
+	TaskID              string // empty if the call could not be assigned
+	TaskSource          string // tasks.SourceHeader or tasks.SourceInferred
+	TaskExternalID      string // the x-pitwall-task value
+	InferredTaskID      string
+	Agent               string
+	ConfigLabel         string
+	CallIndex           int       // position of the call in its task, from 1
+	TaskStart           time.Time // when the task's first call arrived
+	RepeatedInputTokens int64     // input resent unchanged from the task's previous call
+
+	// For tracing only: the messages this call added to its task's
+	// conversation, and what the model answered.
+	NewMessages []tasks.Message
+	OutputText  string
 }
 
 // Recorder receives every finished call. Implementations must not block:
@@ -40,12 +60,21 @@ type Recorder interface {
 	Record(ctx context.Context, r Record)
 }
 
-// Recorders fans a record out to several recorders.
+// Recorders fans a record out to several recorders. Each runs on its own:
+// a panic in one (a metrics bug, say) is logged and never stops the others,
+// so the cost row is written whatever happens to the rest.
 type Recorders []Recorder
 
 func (rs Recorders) Record(ctx context.Context, r Record) {
 	for _, rec := range rs {
-		rec.Record(ctx, r)
+		func() {
+			defer func() {
+				if p := recover(); p != nil {
+					slog.Default().Error("recorder panicked; other recorders still ran", "recorder", fmt.Sprintf("%T", rec), "panic", p, "id", r.ID)
+				}
+			}()
+			rec.Record(ctx, r)
+		}()
 	}
 }
 
@@ -74,6 +103,10 @@ func (l LogRecorder) Record(ctx context.Context, r Record) {
 	}
 	if r.KeyPrefix != "" {
 		attrs = append(attrs, slog.String("key", r.KeyPrefix))
+	}
+	if r.TaskID != "" {
+		attrs = append(attrs, slog.String("task", r.TaskID), slog.String("task_source", r.TaskSource),
+			slog.Int("call_index", r.CallIndex), slog.Int64("repeated_input_tokens", r.RepeatedInputTokens))
 	}
 	if r.Stream {
 		attrs = append(attrs, slog.Int64("ttft_ms", r.TTFT.Milliseconds()))
@@ -107,6 +140,16 @@ func (d DBRecorder) Record(_ context.Context, r Record) {
 		Estimated: r.Usage.Estimated, Priced: r.Priced, Cost: r.Cost, Reserved: r.Reserved,
 		LatencyMS: int(r.Latency.Milliseconds()), OverheadMS: float32(r.Overhead.Microseconds()) / 1000,
 		ClientGone: r.ClientGone, Error: r.Error,
+		RepeatedInputTokens: r.RepeatedInputTokens,
+		TaskSource:          r.TaskSource, TaskExternalID: r.TaskExternalID, Agent: r.Agent, ConfigLabel: r.ConfigLabel,
+	}
+	if r.TaskID != "" {
+		task := r.TaskID
+		row.TaskID = &task
+	}
+	if r.InferredTaskID != "" {
+		inferred := r.InferredTaskID
+		row.InferredTaskID = &inferred
 	}
 	if r.TeamID != 0 {
 		team := r.TeamID

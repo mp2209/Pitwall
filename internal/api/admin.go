@@ -36,6 +36,8 @@ func (s *Server) adminRoutes(r chi.Router) {
 	r.Get("/prices", s.listPrices)
 	r.Post("/prices", s.addPrice)
 	r.Get("/requests", s.listRequests)
+	r.Get("/tasks", s.listTasks)
+	r.Get("/tasks/{id}", s.getTask)
 }
 
 func (s *Server) adminAuth(next http.Handler) http.Handler {

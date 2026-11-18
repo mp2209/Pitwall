@@ -52,7 +52,9 @@ services:
     build:
       context: ..
     image: pitwall:dev
-    ports: ["8080:8080"]
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:9464:9464" # Prometheus metrics, local only
     env_file:
       - path: ../.env
         required: false
@@ -169,7 +171,36 @@ services:
     depends_on: *langfuse-deps
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports: ["127.0.0.1:9091:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on: [gateway]
+
+  # Dashboards: per-task panels query Postgres directly; gateway-wide panels
+  # use Prometheus. Open http://localhost:3001 (anonymous viewers allowed).
+  grafana:
+    image: grafana/grafana:12.1.0
+    ports: ["127.0.0.1:3001:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/pitwall.json
+      # Read by the Postgres datasource; must match the postgres service.
+      PITWALL_GRAFANA_PG_PASSWORD: ${POSTGRES_PASSWORD:-pitwall}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      postgres: {condition: service_healthy}
+      prometheus: {condition: service_started}
+
 volumes:
+  prometheus-data:
+  grafana-data:
   postgres-data:
   ollama-models:
   clickhouse-data:

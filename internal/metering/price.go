@@ -86,6 +86,16 @@ func (p Price) Cost(u Usage) Nanos {
 	return Nanos(math.Round(perMillion * 1e3))
 }
 
+// UncachedCost is what the usage would have cost with no prompt caching:
+// cache reads and writes billed as plain input. Cost minus this is what
+// caching saved (negative when writes outweighed reads).
+func (p Price) UncachedCost(u Usage) Nanos {
+	plain := u
+	plain.InputTokens = u.PromptTokens()
+	plain.CachedReadTokens, plain.CacheWriteTokens, plain.CacheWrite1hTokens = 0, 0, 0
+	return p.Cost(plain)
+}
+
 // MaxCost is the most a call can cost before the provider answers: the
 // whole prompt billed at the dearest input rate (a 1-hour cache write costs
 // more than plain input), maxOutput tokens of output, and the US multiplier.

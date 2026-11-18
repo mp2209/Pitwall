@@ -24,6 +24,7 @@ import (
 	"github.com/mp2209/pitwall/internal/metering"
 	"github.com/mp2209/pitwall/internal/providers"
 	"github.com/mp2209/pitwall/internal/store"
+	"github.com/mp2209/pitwall/internal/tasks"
 )
 
 // Server is the gateway's HTTP handler set.
@@ -37,6 +38,7 @@ type Server struct {
 	store      *store.Store
 	prices     *metering.PriceBook
 	budget     *metering.Budget
+	tracker    *tasks.Tracker
 	adminToken string
 
 	unpriced sync.Map // model names already warned about
@@ -53,6 +55,9 @@ type Options struct {
 	Store    *store.Store
 	Prices   *metering.PriceBook
 	Budget   *metering.Budget
+	// Tracker assigns calls to tasks; without one, an in-memory tracker is
+	// used, which is fine for a single gateway.
+	Tracker *tasks.Tracker
 	// AdminToken, if set, is accepted as a bearer token on /admin besides
 	// keys whose user has the admin role. It bootstraps the first admin.
 	AdminToken string
@@ -61,7 +66,11 @@ type Options struct {
 func New(cfg *config.Config, opts Options) *Server {
 	s := &Server{
 		cfg: cfg, router: providers.NewRouter(cfg), client: opts.Client, recorder: opts.Recorder, log: opts.Log,
-		keys: opts.Keys, store: opts.Store, prices: opts.Prices, budget: opts.Budget, adminToken: opts.AdminToken,
+		keys: opts.Keys, store: opts.Store, prices: opts.Prices, budget: opts.Budget, tracker: opts.Tracker,
+		adminToken: opts.AdminToken,
+	}
+	if s.tracker == nil {
+		s.tracker = tasks.NewTracker(tasks.NewMemStore())
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -91,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/v1/chat/completions", s.handleChatCompletions)
 		r.Post("/v1/messages", s.handleMessages)
 		r.Post("/v1/messages/count_tokens", s.handleCountTokens)
+		r.Post("/v1/pitwall/tasks/outcome", s.handleTaskOutcome)
 	})
 	if s.store != nil {
 		r.Route("/admin", s.adminRoutes)
@@ -237,6 +247,12 @@ type call struct {
 	speed     string // "fast" if the client asked for fast mode
 	key       *auth.Key
 
+	conv        tasks.Conversation
+	taskHeader  string // x-pitwall-task
+	agent       string
+	configLabel string
+	assignment  tasks.Assignment
+
 	reservation *metering.Reservation
 }
 
@@ -253,5 +269,6 @@ func (c *call) record() Record {
 	if c.key != nil {
 		r.KeyID, r.KeyPrefix, r.TeamID = c.key.ID, c.key.Prefix, c.key.TeamID
 	}
+	r.Agent, r.ConfigLabel = c.agent, c.configLabel
 	return r
 }

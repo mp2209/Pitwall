@@ -11,6 +11,7 @@ import (
 	"github.com/mp2209/pitwall/internal/metering"
 	"github.com/mp2209/pitwall/internal/providers/anthropic"
 	"github.com/mp2209/pitwall/internal/providers/openai"
+	"github.com/mp2209/pitwall/internal/tasks"
 	"github.com/mp2209/pitwall/internal/translate"
 )
 
@@ -33,7 +34,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	case req.MaxTokens != nil:
 		maxOutput = int64(*req.MaxTokens)
 	}
-	c, ok := s.newCall(w, r, callSpec{format: format, model: req.Model, stream: req.Stream, body: body, maxOutput: maxOutput})
+	c, ok := s.newCall(w, r, callSpec{format: format, model: req.Model, stream: req.Stream, body: body, maxOutput: maxOutput,
+		conv: tasks.FromOpenAI(&req)})
 	if !ok {
 		return
 	}
@@ -55,12 +57,12 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ex.path, ex.body = "/v1/chat/completions", up
-		ex.convert = func(b []byte) ([]byte, metering.Usage, error) {
+		ex.convert = func(b []byte) (converted, error) {
 			var resp openai.ChatResponse
 			if err := json.Unmarshal(b, &resp); err != nil {
-				return nil, metering.Usage{}, err
+				return converted{}, err
 			}
-			return b, resp.Usage.Metering(), nil
+			return converted{body: b, usage: resp.Usage.Metering(), text: translate.OpenAIOutputText(&resp)}, nil
 		}
 
 	case config.KindAnthropic:
@@ -78,13 +80,13 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		if req.Stream {
 			ex.streamer = translate.NewAnthropicToOpenAIStream(req.Model, clientWantsUsage, body)
 		}
-		ex.convert = func(b []byte) ([]byte, metering.Usage, error) {
+		ex.convert = func(b []byte) (converted, error) {
 			var resp anthropic.MessagesResponse
 			if err := json.Unmarshal(b, &resp); err != nil {
-				return nil, metering.Usage{}, err
+				return converted{}, err
 			}
 			out, err := json.Marshal(translate.AnthropicToOpenAIResponse(&resp, req.Model))
-			return out, resp.Usage.Metering(), err
+			return converted{body: out, usage: resp.Usage.Metering(), text: translate.AnthropicOutputText(&resp)}, err
 		}
 	}
 	s.send(w, r, ex)
@@ -106,7 +108,8 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if maxOutput <= 0 {
 		maxOutput = int64(s.cfg.DefaultMaxTokens)
 	}
-	c, ok := s.newCall(w, r, callSpec{format: format, model: req.Model, stream: req.Stream, body: body, maxOutput: maxOutput, speed: req.Speed})
+	c, ok := s.newCall(w, r, callSpec{format: format, model: req.Model, stream: req.Stream, body: body, maxOutput: maxOutput,
+		speed: req.Speed, conv: tasks.FromAnthropic(&req)})
 	if !ok {
 		return
 	}
@@ -123,12 +126,12 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		if req.Stream {
 			ex.streamer = translate.NewAnthropicPassthrough(body)
 		}
-		ex.convert = func(b []byte) ([]byte, metering.Usage, error) {
+		ex.convert = func(b []byte) (converted, error) {
 			var resp anthropic.MessagesResponse
 			if err := json.Unmarshal(b, &resp); err != nil {
-				return nil, metering.Usage{}, err
+				return converted{}, err
 			}
-			return b, resp.Usage.Metering(), nil
+			return converted{body: b, usage: resp.Usage.Metering(), text: translate.AnthropicOutputText(&resp)}, nil
 		}
 
 	case config.KindOpenAI:
@@ -146,13 +149,13 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		if req.Stream {
 			ex.streamer = translate.NewOpenAIToAnthropicStream(req.Model, body)
 		}
-		ex.convert = func(b []byte) ([]byte, metering.Usage, error) {
+		ex.convert = func(b []byte) (converted, error) {
 			var resp openai.ChatResponse
 			if err := json.Unmarshal(b, &resp); err != nil {
-				return nil, metering.Usage{}, err
+				return converted{}, err
 			}
 			out, err := json.Marshal(translate.OpenAIToAnthropicResponse(&resp, req.Model))
-			return out, resp.Usage.Metering(), err
+			return converted{body: out, usage: resp.Usage.Metering(), text: translate.OpenAIOutputText(&resp)}, err
 		}
 	}
 	s.send(w, r, ex)
@@ -216,6 +219,7 @@ type callSpec struct {
 	body      []byte
 	maxOutput int64
 	speed     string
+	conv      tasks.Conversation
 }
 
 // newCall resolves the model, checks the key may use it and starts the
@@ -251,6 +255,11 @@ func (s *Server) newCall(w http.ResponseWriter, r *http.Request, spec callSpec) 
 		maxOutput: spec.maxOutput,
 		speed:     speed,
 		key:       key,
+
+		conv:        spec.conv,
+		taskHeader:  r.Header.Get(tasks.HeaderTask),
+		agent:       tasks.AgentName(r.Header.Get(tasks.HeaderAgent), r.Header.Get("User-Agent")),
+		configLabel: tasks.CleanLabel(r.Header.Get(tasks.HeaderConfig)),
 	}, true
 }
 

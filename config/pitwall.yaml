@@ -6,13 +6,23 @@
 
 listen: ":8080"
 
-# Phase 1 stand-in for virtual keys (Phase 2 replaces this with per-developer
-# keys stored as hashes in Postgres). Empty means no auth: local use only.
+# Without a database (PITWALL_DATABASE_URL unset), this list is the only
+# auth: callers must send one of these keys, or anyone may call if it is
+# empty (local use only). With a database, per-developer virtual keys from
+# the admin API replace it.
 dev_keys: []
 
 # Used when an OpenAI-format request without max_tokens goes to an
-# Anthropic-format provider, which requires the field.
+# Anthropic-format provider, which requires the field, and as the output
+# worst case when reserving budget for a request that sets no limit.
 default_max_tokens: 8192
+
+# Price table, relative to this file. See prices.yaml for sources.
+prices_file: prices.yaml
+
+# If Redis is unreachable, let calls through (and log it) rather than
+# refusing every call. Set false to fail closed.
+budget_fail_open: true
 
 providers:
   - name: openai
@@ -31,6 +41,7 @@ providers:
     kind: openai
     base_url: http://localhost:11434
     base_url_env: OLLAMA_BASE_URL
+    free: true                 # local models are recorded at $0
 
   # The mock provider serves both formats on one port.
   - name: mock-openai

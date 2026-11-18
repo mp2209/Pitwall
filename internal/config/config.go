@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -26,9 +27,29 @@ type Config struct {
 	// to an Anthropic-format provider without one; Anthropic requires it.
 	DefaultMaxTokens int `yaml:"default_max_tokens"`
 	// MaxRequestBytes caps request bodies.
-	MaxRequestBytes int64      `yaml:"max_request_bytes"`
-	Providers       []Provider `yaml:"providers"`
-	Models          []Model    `yaml:"models"`
+	MaxRequestBytes int64 `yaml:"max_request_bytes"`
+	// PricesFile is the reviewed price table, relative to this config
+	// file. With a database, its rows are copied into model_prices at
+	// startup (existing rows are never changed).
+	PricesFile string `yaml:"prices_file"`
+	// BudgetFailOpen lets calls through when Redis is unreachable, logging
+	// the failure, instead of refusing them. Default true.
+	BudgetFailOpen *bool      `yaml:"budget_fail_open"`
+	Providers      []Provider `yaml:"providers"`
+	Models         []Model    `yaml:"models"`
+
+	dir string // directory of the config file, for relative paths
+}
+
+// FailOpen reports whether calls go through when budgets can't be checked.
+func (c *Config) FailOpen() bool { return c.BudgetFailOpen == nil || *c.BudgetFailOpen }
+
+// PricesPath resolves PricesFile against the config file's directory.
+func (c *Config) PricesPath() string {
+	if c.PricesFile == "" || filepath.IsAbs(c.PricesFile) {
+		return c.PricesFile
+	}
+	return filepath.Join(c.dir, c.PricesFile)
 }
 
 type Provider struct {
@@ -45,6 +66,9 @@ type Provider struct {
 	// what Ollama accepts) or max_completion_tokens (what OpenAI's newer
 	// models require).
 	MaxTokensParam string `yaml:"max_tokens_param"`
+	// Free marks a provider whose calls cost nothing (a local model), so
+	// they are recorded at $0 instead of flagged as unpriced.
+	Free bool `yaml:"free"`
 }
 
 // Model is one routing rule. Rules are tried in order; the first whose
@@ -67,7 +91,12 @@ func Load(file string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Parse(b)
+	c, err := Parse(b)
+	if err != nil {
+		return nil, err
+	}
+	c.dir = filepath.Dir(file)
+	return c, nil
 }
 
 // Parse decodes and validates YAML config.
@@ -94,6 +123,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.MaxRequestBytes == 0 {
 		c.MaxRequestBytes = 32 << 20
+	}
+	if c.PricesFile == "" {
+		c.PricesFile = "prices.yaml"
 	}
 	for i := range c.Providers {
 		p := &c.Providers[i]

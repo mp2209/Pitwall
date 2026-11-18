@@ -63,6 +63,8 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       PITWALL_DATABASE_URL: postgres://pitwall:pitwall@postgres:5432/pitwall?sslmode=disable
       PITWALL_REDIS_URL: redis://redis:6379/1
+      # Bootstrap token for /admin; dev only. Set your own in .env.
+      PITWALL_ADMIN_TOKEN: ${PITWALL_ADMIN_TOKEN:-pw-admin-dev}
       LANGFUSE_HOST: http://langfuse-web:3000
       LANGFUSE_PUBLIC_KEY: pk-lf-pitwall-dev
       LANGFUSE_SECRET_KEY: sk-lf-pitwall-dev

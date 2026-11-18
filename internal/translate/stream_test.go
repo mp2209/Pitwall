@@ -12,6 +12,8 @@ import (
 	"github.com/mp2209/pitwall/internal/sse"
 )
 
+var testPrompt = []byte(`{"model":"m","messages":[{"role":"user","content":"Fix the failing test in parser.go"}]}`)
+
 // run feeds an upstream stream through s and returns the client stream.
 func run(t *testing.T, s Stream, upstream string) []*sse.Event {
 	t.Helper()
@@ -78,7 +80,7 @@ var anthropicToolStream = anthropicEvents(
 )
 
 func TestAnthropicToOpenAIStream(t *testing.T) {
-	s := NewAnthropicToOpenAIStream("my-alias", true, 100)
+	s := NewAnthropicToOpenAIStream("my-alias", true, testPrompt)
 	evs := run(t, s, anthropicToolStream)
 
 	var text strings.Builder
@@ -175,7 +177,7 @@ func TestAnthropicToOpenAIStream(t *testing.T) {
 }
 
 func TestAnthropicToOpenAIStreamWithoutUsageChunk(t *testing.T) {
-	evs := run(t, NewAnthropicToOpenAIStream("m", false, 0), anthropicToolStream)
+	evs := run(t, NewAnthropicToOpenAIStream("m", false, nil), anthropicToolStream)
 	for _, ev := range evs {
 		if bytes.Contains(ev.Data, []byte(`"usage"`)) {
 			t.Fatalf("client did not ask for usage but got %s", ev.Data)
@@ -205,7 +207,7 @@ var openAIToolStream = openAIChunks(
 )
 
 func TestOpenAIToAnthropicStream(t *testing.T) {
-	s := NewOpenAIToAnthropicStream("my-alias", 100)
+	s := NewOpenAIToAnthropicStream("my-alias", testPrompt)
 	evs := run(t, s, openAIToolStream)
 
 	var types []string
@@ -294,19 +296,21 @@ func TestOpenAIToAnthropicStreamEstimatesWithoutUsage(t *testing.T) {
 		`{"id":"x","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_z","function":{"name":"f","arguments":"{\"a\":1}"}}]}}]}`,
 		`{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
 	)
-	s := NewOpenAIToAnthropicStream("m", 400)
+	s := NewOpenAIToAnthropicStream("m", testPrompt)
 	evs := run(t, s, upstream)
 	if last := evs[len(evs)-1]; last.Event != "message_stop" {
 		t.Fatalf("stream not closed: last event %q", last.Event)
 	}
 	u := s.Usage()
-	if !u.Estimated || u.InputTokens != 100 || u.OutputTokens == 0 {
-		t.Errorf("usage = %+v, want estimated with 100 input tokens", u)
+	wantIn := metering.CountTokens(string(testPrompt))
+	wantOut := metering.CountTokens(`hello world!f{"a":1}`)
+	if !u.Estimated || u.InputTokens != wantIn || u.OutputTokens != wantOut {
+		t.Errorf("usage = %+v, want estimated %d input and %d output tokens", u, wantIn, wantOut)
 	}
 }
 
 func TestOpenAIPassthroughStripsForcedUsage(t *testing.T) {
-	s := NewOpenAIPassthrough(10, true)
+	s := NewOpenAIPassthrough(testPrompt, true)
 	evs := run(t, s, openAIToolStream)
 	for _, ev := range evs {
 		if bytes.Contains(ev.Data, []byte(`"usage":{`)) {
@@ -321,14 +325,14 @@ func TestOpenAIPassthroughStripsForcedUsage(t *testing.T) {
 		t.Errorf("usage = %+v want %+v", got, want)
 	}
 
-	kept := run(t, NewOpenAIPassthrough(10, false), openAIToolStream)
+	kept := run(t, NewOpenAIPassthrough(testPrompt, false), openAIToolStream)
 	if len(kept) != len(evs)+1 {
 		t.Errorf("without stripping, all %d events should pass, got %d", len(evs)+1, len(kept))
 	}
 }
 
 func TestAnthropicPassthroughIsByteExact(t *testing.T) {
-	s := NewAnthropicPassthrough(10)
+	s := NewAnthropicPassthrough(testPrompt)
 	var out bytes.Buffer
 	r := sse.NewReader(strings.NewReader(anthropicToolStream))
 	for {
@@ -350,7 +354,7 @@ func TestAnthropicPassthroughIsByteExact(t *testing.T) {
 }
 
 func TestAnthropicPassthroughCutShortEstimatesOutput(t *testing.T) {
-	s := NewAnthropicPassthrough(10)
+	s := NewAnthropicPassthrough(testPrompt)
 	end := strings.Index(anthropicToolStream, "event: message_delta")
 	if end < 0 {
 		t.Fatal("fixture has no message_delta")

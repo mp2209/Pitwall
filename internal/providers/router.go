@@ -27,6 +27,7 @@ type Upstream struct {
 	BaseURL        string
 	APIKey         string
 	MaxTokensParam string
+	Free           bool // calls cost nothing (a local model)
 }
 
 // Route is the result of resolving a requested model name.
@@ -51,6 +52,7 @@ func NewRouter(c *config.Config) *Router {
 			Kind:           p.Kind,
 			BaseURL:        p.BaseURL,
 			MaxTokensParam: p.MaxTokensParam,
+			Free:           p.Free,
 		}
 		if p.APIKeyEnv != "" {
 			u.APIKey = os.Getenv(p.APIKeyEnv)

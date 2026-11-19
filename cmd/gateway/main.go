@@ -20,6 +20,8 @@ import (
 	"github.com/mp2209/pitwall/internal/config"
 	"github.com/mp2209/pitwall/internal/metering"
 	"github.com/mp2209/pitwall/internal/store"
+	"github.com/mp2209/pitwall/internal/tasks"
+	"github.com/mp2209/pitwall/internal/telemetry"
 )
 
 func main() { os.Exit(run()) }
@@ -51,12 +53,23 @@ func run() int {
 	defer stop()
 	metering.WarmTokenizer()
 
-	opts, closeDeps, err := setup(ctx, cfg, log)
+	metrics := telemetry.NewMetrics()
+	opts, closeDeps, err := setup(ctx, cfg, log, metrics)
 	if err != nil {
 		log.Error("startup", "err", err)
 		closeDeps(context.Background())
 		return 1
 	}
+	recorders := api.Recorders{opts.Recorder, metrics}
+	langfuse := langfuseFromEnv(log)
+	if langfuse != nil {
+		recorders = append(recorders, langfuse)
+		metrics.AddGauge("pitwall_langfuse_events_dropped", "Trace events dropped or rejected by Langfuse.", func() float64 {
+			_, dropped, failed := langfuse.Stats()
+			return float64(dropped + failed)
+		})
+	}
+	opts.Recorder = recorders
 	srv := api.New(cfg, opts)
 	if opts.Store != nil {
 		go refreshPrices(ctx, srv, log)
@@ -66,6 +79,19 @@ func run() int {
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: agent streams can run for many minutes.
+	}
+
+	var metricsServer *http.Server
+	if addr := *cfg.MetricsListen; addr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", metrics.Handler())
+		metricsServer = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("metrics server stopped", "err", err)
+			}
+		}()
+		log.Info("prometheus metrics", "addr", addr, "path", "/metrics")
 	}
 
 	serveErr := make(chan error, 1)
@@ -90,15 +116,37 @@ func run() int {
 		log.Warn("shutdown", "err", err)
 	}
 	closeDeps(shutdownCtx)
+	if langfuse != nil {
+		if err := langfuse.Close(shutdownCtx); err != nil {
+			log.Warn("langfuse queue not fully sent at shutdown", "err", err)
+		}
+	}
+	if metricsServer != nil {
+		_ = metricsServer.Shutdown(shutdownCtx)
+	}
 	return code
+}
+
+// langfuseFromEnv starts the Langfuse exporter when LANGFUSE_HOST and its
+// keys are set.
+func langfuseFromEnv(log *slog.Logger) *telemetry.Langfuse {
+	host, pub, sec := os.Getenv("LANGFUSE_HOST"), os.Getenv("LANGFUSE_PUBLIC_KEY"), os.Getenv("LANGFUSE_SECRET_KEY")
+	if host == "" || pub == "" || sec == "" {
+		log.Info("langfuse tracing off (set LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY to enable)")
+		return nil
+	}
+	log.Info("langfuse tracing on: one trace per task, inputs and outputs redacted", "host", host)
+	return telemetry.NewLangfuse(telemetry.LangfuseConfig{Host: host, PublicKey: pub, SecretKey: sec}, log)
 }
 
 // setup connects the optional backing services. With PITWALL_DATABASE_URL
 // the gateway uses virtual keys, records every call in Postgres and serves
 // the admin API; with PITWALL_REDIS_URL as well it enforces budgets. Without
 // them it runs in dev mode.
-func setup(ctx context.Context, cfg *config.Config, log *slog.Logger) (api.Options, func(context.Context), error) {
+func setup(ctx context.Context, cfg *config.Config, log *slog.Logger, metrics *telemetry.Metrics) (api.Options, func(context.Context), error) {
 	opts := api.Options{Log: log, AdminToken: os.Getenv("PITWALL_ADMIN_TOKEN")}
+	opts.Tracker = tasks.NewTracker(tasks.NewMemStore())
+	opts.Tracker.IdleGap = cfg.TaskIdleGap
 	var closers []func(context.Context)
 	closeAll := func(ctx context.Context) {
 		for i := len(closers) - 1; i >= 0; i-- {
@@ -144,6 +192,10 @@ func setup(ctx context.Context, cfg *config.Config, log *slog.Logger) (api.Optio
 	opts.Prices.Replace(dbPrices)
 
 	writer := store.NewRequestWriter(st, log, store.WriterOptions{})
+	metrics.AddGauge("pitwall_request_log_dropped_rows", "Request log rows dropped because the database was down or slow.", func() float64 {
+		_, dropped := writer.Stats()
+		return float64(dropped)
+	})
 	closers = append(closers, func(ctx context.Context) {
 		if err := writer.Close(ctx); err != nil {
 			log.Warn("request log not fully flushed at shutdown", "err", err)
@@ -181,6 +233,9 @@ func setup(ctx context.Context, cfg *config.Config, log *slog.Logger) (api.Optio
 		log.Error("redis unreachable at startup; budgets fail open until it is back", "err", err)
 	}
 	opts.Budget = metering.NewBudget(rdb, st.SpendSince)
+	// Shared task state, so every replica infers the same tasks.
+	opts.Tracker = tasks.NewTracker(tasks.NewRedisStore(rdb))
+	opts.Tracker.IdleGap = cfg.TaskIdleGap
 	return opts, closeAll, nil
 }
 

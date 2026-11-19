@@ -1,0 +1,821 @@
+{
+  "uid": "pitwall-tasks",
+  "title": "Pitwall: tasks and gateway",
+  "tags": [
+    "pitwall"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "task",
+        "label": "Task",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "pitwall-postgres"
+        },
+        "query": "SELECT coalesce(external_id, id) || ' \u00b7 ' || to_char(started_at, 'MM-DD HH24:MI') AS __text, id AS __value FROM tasks ORDER BY started_at DESC LIMIT 100",
+        "definition": "recent tasks",
+        "refresh": 2,
+        "sort": 0,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Tasks (from Postgres)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Tasks",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pitwall-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pitwall-postgres"
+          },
+          "rawSql": "SELECT count(*) AS tasks FROM tasks WHERE $__timeFilter(started_at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Solved",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pitwall-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pitwall-postgres"
+          },
+          "rawSql": "SELECT count(*) FILTER (WHERE outcome = 'solved') AS solved FROM tasks WHERE $__timeFilter(started_at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Total cost",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pitwall-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pitwall-postgres"
+          },
+          "rawSql": "SELECT coalesce(sum(cost_usd), 0)::float8 AS cost FROM tasks WHERE $__timeFilter(started_at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Cost per solved task",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pitwall-postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pitwall-postgres"
+          },
+          "rawSql": "SELECT (sum(cost_usd) / nullif(count(*) FILTER (WHERE outcome = 'solved'), 0))::float8 AS \"cost per solved task\" FROM tasks WHERE $__timeFilter(started_at)",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "noValue": "no solved tasks yet"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Recent tasks",
+      "description": "One row per agent run. Context columns are prompt tokens of the first call and the largest call; repeated input is the share of prompt tokens resent unchanged from the previous call.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pitwall-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pitwall-postgres"
+          },
+          "rawSql": "SELECT t.started_at AS \"started\",\n  coalesce(t.external_id, t.id) AS \"task\",\n  t.source, t.agent, t.config_label AS \"config\", t.outcome, t.calls,\n  t.cost_usd::float8 AS \"cost\",\n  round(extract(epoch FROM (t.ended_at - t.started_at))::numeric, 1)::float8 AS \"wall time\",\n  (SELECT r.input_tokens + r.cached_read_tokens + r.cache_write_tokens + r.cache_write_1h_tokens\n     FROM requests r WHERE r.task_id = t.id ORDER BY r.ts LIMIT 1) AS \"first context\",\n  t.max_context_tokens AS \"max context\",\n  CASE WHEN t.prompt_tokens > 0 THEN (100.0 * t.repeated_input_tokens / t.prompt_tokens)::float8 END AS \"repeated input\",\n  t.id AS \"id\"\nFROM tasks t\nWHERE $__timeFilter(t.started_at)\nORDER BY t.started_at DESC\nLIMIT 200",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "wall time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "repeated input"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "first context"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max context"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Cost per solved task by configuration",
+      "description": "Configuration is the x-pitwall-config label the benchmark runner sends.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pitwall-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pitwall-postgres"
+          },
+          "rawSql": "SELECT config_label AS \"config\",\n  count(*) AS \"tasks\",\n  count(*) FILTER (WHERE outcome = 'solved') AS \"solved\",\n  (100.0 * count(*) FILTER (WHERE outcome = 'solved') / count(*))::float8 AS \"solve rate\",\n  (sum(cost_usd) / nullif(count(*) FILTER (WHERE outcome = 'solved'), 0))::float8 AS \"cost per solved task\",\n  avg(calls)::float8 AS \"calls per task\"\nFROM tasks\nWHERE $__timeFilter(started_at)\nGROUP BY config_label\nORDER BY config_label",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "solve rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost per solved task"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "calls per task"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Context growth per call: $task",
+      "description": "Prompt size of each call in the selected task. The time range does not apply.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pitwall-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pitwall-postgres"
+          },
+          "rawSql": "SELECT ts AS \"time\",\n  input_tokens + cached_read_tokens + cache_write_tokens + cache_write_1h_tokens AS \"context tokens\",\n  repeated_input_tokens AS \"repeated input\",\n  cached_read_tokens AS \"cache reads\"\nFROM requests\nWHERE task_id = '$task'\nORDER BY ts",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Gateway (from Prometheus)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Calls per second by model",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pitwall-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "sum by (model) (rate(pitwall_calls_total[$__rate_interval]))",
+          "legendFormat": "{{model}}",
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Cost per hour by model",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pitwall-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 24,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "sum by (model) (rate(pitwall_cost_usd_total[$__rate_interval])) * 3600",
+          "legendFormat": "{{model}}",
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Prompt-cache savings per hour",
+      "description": "Cost without caching minus actual cost. Negative when cache writes outweigh reads.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pitwall-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 24,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "(sum by (model) (rate(pitwall_cost_without_cache_usd_total[$__rate_interval])) - sum by (model) (rate(pitwall_cost_usd_total[$__rate_interval]))) * 3600",
+          "legendFormat": "{{model}}",
+          "range": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "sum(rate(pitwall_tokens_total{kind=\"cached_read\"}[$__rate_interval]))",
+          "legendFormat": "cache-read tokens/s",
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Gateway overhead",
+      "description": "Latency the gateway adds outside the provider's own time.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pitwall-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(pitwall_gateway_overhead_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p50",
+          "range": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(pitwall_gateway_overhead_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p99",
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Time to first token",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pitwall-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 32,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(pitwall_ttft_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p50",
+          "range": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(pitwall_ttft_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p99",
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Budget refusals and guard triggers",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pitwall-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 32,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "sum(rate(pitwall_budget_refusals_total[$__rate_interval]))",
+          "legendFormat": "budget refusals",
+          "range": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pitwall-prometheus"
+          },
+          "expr": "sum by (signal, action) (rate(pitwall_guard_triggers_total[$__rate_interval]))",
+          "legendFormat": "guard {{signal}} {{action}}",
+          "range": true,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}

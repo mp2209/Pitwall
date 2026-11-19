@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -178,5 +179,63 @@ func TestRequestWriterAndSpend(t *testing.T) {
 	}
 	if rows[0].Cost != 123_456_789 || rows[0].CostUSD != 0.123456789 || *rows[0].TTFTMS != 42 {
 		t.Errorf("row = %+v", rows[0])
+	}
+}
+
+// An agent may report its outcome before the gateway has written the task's
+// last calls; the outcome makes a stub row that the calls then fill in.
+func TestTaskOutcomeBeforeCalls(t *testing.T) {
+	st := storetest.New(t)
+	user, _ := st.CreateUser(ctx, "dev@example.test", nil, auth.RoleDev)
+	key, _, _ := st.CreateKey(ctx, store.NewKey{UserID: user.ID})
+	other, _ := st.CreateUser(ctx, "other@example.test", nil, auth.RoleDev)
+	otherKey, _, _ := st.CreateKey(ctx, store.NewKey{UserID: other.ID})
+
+	ref := store.TaskRef{ID: "t_abc", KeyID: key.ID, Source: "header", ExternalID: "run-1"}
+	if err := st.SetTaskOutcome(ctx, ref, store.OutcomeSolved); err != nil {
+		t.Fatal(err)
+	}
+	stolen := ref
+	stolen.KeyID = otherKey.ID
+	if err := st.SetTaskOutcome(ctx, stolen, store.OutcomeFailed); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("another key set the outcome: %v", err)
+	}
+
+	start := time.Now().Add(-time.Minute).UTC().Truncate(time.Millisecond)
+	task := "t_abc"
+	var rows []store.RequestRow
+	for i := range 3 {
+		rows = append(rows, store.RequestRow{
+			ID: fmt.Sprintf("pw_%d", i), Time: start.Add(time.Duration(i) * 10 * time.Second), TaskID: &task,
+			KeyID: key.ID, ClientFormat: "anthropic", Model: "m", UpstreamModel: "m", Provider: "p", Status: 200,
+			InputTokens: int64(100 * (i + 1)), CachedReadTokens: int64(1000 * i), OutputTokens: 50,
+			RepeatedInputTokens: int64(900 * i), Cost: metering.FromUSD(0.01), LatencyMS: 2000,
+			TaskSource: "header", TaskExternalID: "run-1", Agent: "agent", ConfigLabel: "cfg",
+		})
+	}
+	if err := st.InsertRequests(ctx, rows[:2]); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.InsertRequests(ctx, rows[2:]); err != nil {
+		t.Fatal(err)
+	}
+	got, calls, err := st.TaskWithCalls(ctx, "t_abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Outcome != store.OutcomeSolved || got.Calls != 3 || got.Agent != "agent" || got.ConfigLabel != "cfg" {
+		t.Errorf("task = %+v", got)
+	}
+	if !got.StartedAt.Equal(start) || got.WallSeconds != 22 {
+		t.Errorf("started %v (want %v), wall %v s (want 22: first call to the end of the last)", got.StartedAt, start, got.WallSeconds)
+	}
+	if got.MaxContextTokens != 2300 || got.FirstContextTokens != 100 || got.Cost != metering.FromUSD(0.03) {
+		t.Errorf("context first %d max %d, cost %v", got.FirstContextTokens, got.MaxContextTokens, got.Cost)
+	}
+	if got.RepeatedInputTokens != 2700 || got.PromptTokens != 3600 {
+		t.Errorf("repeated %d of %d prompt tokens", got.RepeatedInputTokens, got.PromptTokens)
+	}
+	if len(calls) != 3 || calls[2].ContextTokens != 2300 {
+		t.Errorf("calls = %+v", calls)
 	}
 }

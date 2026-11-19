@@ -5,11 +5,12 @@ model call into the task it belongs to, and answers the question a
 per-request bill can't: **what does it cost to finish a task, and which model
 and harness setup does it cheapest?**
 
-> **Status: Phases 0–2 of 6 complete.** The proxy speaks both API formats,
-> and every call now carries a virtual key and a cost row, and counts against
-> a monthly budget. Task traces, automatic prompt caching, the runaway-agent
-> guard and the harness benchmark are next (see [Roadmap](#roadmap)).
-> Findings will lead this README once the benchmark has results.
+> **Status: Phases 0–3 of 6 complete.** The proxy speaks both API formats,
+> every call carries a virtual key, a cost row and a budget check, and calls
+> are grouped into agent tasks with per-task cost, call count and context
+> growth. Automatic prompt caching, the runaway-agent guard and the harness
+> benchmark are next (see [Roadmap](#roadmap)). Findings will lead this
+> README once the benchmark has results.
 
 ## What works today
 
@@ -46,6 +47,24 @@ and harness setup does it cheapest?**
 - **Usage when the provider sends none** is counted with a tokenizer and
   flagged as estimated.
 
+**Task traces** ([design note](docs/decisions/0003-task-traces.md))
+
+- **Every call joins a task.** Clients that can send `x-pitwall-task` name
+  their run; for agents that can't, the gateway infers the task from the
+  conversation each call resends (same system prompt and opening turn,
+  history extended, closed after an idle gap). Inference also runs alongside
+  the header, so its accuracy can be measured.
+- **Per-task numbers in Postgres**: calls, cost, tokens, wall time, the prompt
+  size of every turn, the share of input repeated from the previous call, and
+  the outcome the agent reports (`solved`, `failed`, `stopped`).
+- **Dashboards and traces**: a Grafana dashboard lists tasks with cost, call
+  count and context growth, plus cost per solved task by configuration and
+  gateway metrics from Prometheus. Langfuse gets one trace per task and one
+  generation per call, redacted (credentials, emails, phone and card numbers).
+- **A minimal agent** ([`agent/`](agent/agent.go)) for the benchmark: read
+  files, run the tests, edit, repeat; no shell tool; optional trimming of old
+  tool output; it reports its outcome from its own test run.
+
 **Tested against real clients**: the official OpenAI and Anthropic Python
 SDKs (in CI) and Claude Code, on both same-format and cross-format routes,
 with a virtual key. In the Phase 2 end-to-end run, 18 calls produced 18
@@ -81,8 +100,13 @@ curl -s localhost:8080/v1/messages -H "x-api-key: $PITWALL_KEY" \
   -d '{"model":"mock-claude","max_tokens":200,"messages":[{"role":"user","content":"hello"}]}'
 ```
 
-Non-streaming responses carry the call's cost in `x-pitwall-cost-usd`; every
-call's row is at `GET /admin/requests`.
+Non-streaming responses carry the call's cost in `x-pitwall-cost-usd` and
+every response its task in `x-pitwall-task-id`. Call rows are at
+`GET /admin/requests`, tasks at `GET /admin/tasks`.
+
+Dashboards: Grafana at http://localhost:3001 (the Pitwall dashboard opens by
+default), Langfuse at http://localhost:3000 (dev login `admin@pitwall.local`,
+password in `deploy/docker-compose.yml`), Prometheus at http://localhost:9091.
 
 ### Dev mode
 
@@ -112,6 +136,37 @@ format and records the calls at $0.
 **OpenAI SDKs and OpenAI-format agents:** base URL
 `http://localhost:8080/v1`, API key `$PITWALL_KEY`.
 
+### Tasks
+
+Label a run so its calls form one task, and report how it ended:
+
+```bash
+curl -s localhost:8080/v1/messages -H "x-api-key: $PITWALL_KEY" \
+  -H "x-pitwall-task: fix-parser-1" -H "x-pitwall-config: sonnet/full-history" \
+  -d '{"model":"mock-claude","max_tokens":200,"messages":[{"role":"user","content":"Fix the parser"}]}'
+curl -s localhost:8080/v1/pitwall/tasks/outcome -H "Authorization: Bearer $PITWALL_KEY" \
+  -d '{"task":"fix-parser-1","outcome":"solved"}'
+```
+
+Claude Code can send the label with
+`ANTHROPIC_CUSTOM_HEADERS="x-pitwall-task: my-task"`; without it, its calls
+are grouped by inference.
+
+### The agent
+
+Run Pitwall's own agent on a task directory (it edits files in place, so use
+a copy):
+
+```bash
+cp -R bench/tasks/001-word-count /tmp/wc
+PITWALL_KEY=... bin/agent -model claude-sonnet-5-5 -dir /tmp/wc -config sonnet/full
+```
+
+It sends `x-pitwall-task`, runs the task's tests when it stops, reports the
+outcome, and prints a JSON summary. `-keep-tool-results N` trims all but the
+newest N tool outputs, the "old tool output trimmed" context strategy the
+benchmark compares.
+
 ## Admin API
 
 Authenticate with `Authorization: Bearer $PITWALL_ADMIN_TOKEN`, or with the
@@ -132,6 +187,12 @@ reset at the start of each UTC month; `0` means no limit.
 | `GET /admin/prices` | The price table in effect |
 | `POST /admin/prices` | Add a price row; `effective_from` defaults to now |
 | `GET /admin/requests?key_id=&limit=` | Newest cost rows |
+| `GET /admin/tasks?key_id=&config_label=&outcome=&source=&limit=` | Tasks with totals, context growth and repeated-input share |
+| `GET /admin/tasks/{id}` | A task and its calls in order |
+
+Agents report outcomes with their own key: `POST /v1/pitwall/tasks/outcome`
+with `{"task": "<x-pitwall-task label>"}` or `{"task_id": "<x-pitwall-task-id>"}`
+and `"outcome": "solved" | "failed" | "stopped"`.
 
 ## Configuration
 
@@ -158,9 +219,12 @@ Environment:
 | `PITWALL_DATABASE_URL` | Turns on virtual keys, cost rows and the admin API |
 | `PITWALL_REDIS_URL` | Turns on budgets (needs the database too) |
 | `PITWALL_ADMIN_TOKEN` | Bootstrap bearer token for `/admin` |
+| `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | Turn on Langfuse traces |
 
 `budget_fail_open` (default `true`) decides what happens when Redis is down:
-let calls through and log it, or refuse them.
+let calls through and log it, or refuse them. `task_idle_gap` (default `5m`)
+closes inferred tasks; `metrics_listen` (default `:9464`) serves Prometheus
+metrics on their own port.
 
 ## Development
 
@@ -186,7 +250,11 @@ and never flushes.
 ```
 cmd/gateway/          gateway binary
 cmd/mockprovider/     mock provider binary
-internal/api/         HTTP handlers, streaming relay, billing, admin API
+cmd/agent/            agent binary
+agent/                minimal agent loop used by the benchmark
+internal/api/         HTTP handlers, streaming relay, billing, admin and task API
+internal/tasks/       task header and inference
+internal/telemetry/   Prometheus metrics, Langfuse exporter, PII redaction
 internal/auth/        virtual keys, hashing, key cache
 internal/metering/    usage, prices and cost, Redis budgets, tokenizer
 internal/store/       Postgres migrations, queries, async request writer
@@ -195,8 +263,9 @@ internal/translate/   OpenAI <-> Anthropic requests, responses, streams
 internal/sse/         server-sent event reader and writer
 internal/config/      YAML config and price file
 mockprovider/         fake OpenAI + Anthropic server
+bench/tasks/          benchmark tasks: tiny repos with failing tests
 config/               gateway config and price table
-deploy/               docker-compose.yml, Postgres init
+deploy/               docker-compose.yml, Postgres init, Prometheus, Grafana
 docs/decisions/       design notes
 scripts/              SDK smoke test
 ```
@@ -208,7 +277,7 @@ scripts/              SDK smoke test
 | 0 | Repo, CI, Compose stack, mock provider | done |
 | 1 | Both API formats, streaming, tool calls, OpenAI/Anthropic/Ollama adapters | done |
 | 2 | Postgres schema, virtual keys, cost from a price table, async request log, reserve-then-settle budgets in Redis | done |
-| 3 | Task traces: `x-pitwall-task` header, inferred tasks, Langfuse, Grafana task panel | next |
-| 4 | Automatic prompt-cache breakpoints (switchable per key); runaway-agent guard | |
+| 3 | Task traces: `x-pitwall-task` header, inferred tasks, Langfuse, Grafana task panel | done |
+| 4 | Automatic prompt-cache breakpoints (switchable per key); runaway-agent guard | next |
 | 5 | Harness benchmark: ~20 coding tasks × configurations × 3 repeats | |
 | 6 | Write-up: findings, blog post, demo | |

@@ -24,6 +24,14 @@ prices_file: prices.yaml
 # refusing every call. Set false to fail closed.
 budget_fail_open: true
 
+# Calls without an x-pitwall-task header are grouped into tasks by inference;
+# a task closes after this long without a call.
+task_idle_gap: 5m
+
+# Prometheus metrics, on their own port so they stay off the public one.
+# Set to "" to turn them off.
+metrics_listen: ":9464"
+
 providers:
   - name: openai
     kind: openai

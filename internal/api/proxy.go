@@ -13,6 +13,7 @@ import (
 
 	"github.com/mp2209/pitwall/internal/metering"
 	"github.com/mp2209/pitwall/internal/sse"
+	"github.com/mp2209/pitwall/internal/tasks"
 	"github.com/mp2209/pitwall/internal/translate"
 )
 
@@ -24,10 +25,17 @@ type exchange struct {
 	rawQuery string
 	body     []byte
 	// convert turns a successful non-streaming provider body into the
-	// client's format and extracts usage.
-	convert func(body []byte) ([]byte, metering.Usage, error)
+	// client's format and extracts usage and the answer's text.
+	convert func(body []byte) (converted, error)
 	// streamer handles a streaming response.
 	streamer translate.Stream
+}
+
+// converted is a non-streaming response in the client's format.
+type converted struct {
+	body  []byte
+	usage metering.Usage
+	text  string
 }
 
 const maxErrorBody = 1 << 20
@@ -41,6 +49,10 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request, ex *exchange) {
 		s.recorder.Record(ctx, rec)
 	}()
 	w.Header().Set("x-pitwall-request-id", ex.id)
+	s.assignTask(r.Context(), ex, &rec)
+	if rec.TaskID != "" {
+		w.Header().Set(tasks.ResponseTaskID, rec.TaskID)
+	}
 
 	if !s.reserve(w, r.Context(), ex, &rec) {
 		return
@@ -107,12 +119,14 @@ func (s *Server) relayBody(w http.ResponseWriter, r *http.Request, resp *http.Re
 		writeError(w, ex.format, rec.Status, rec.Error)
 		return
 	}
-	out, usage, err := ex.convert(body)
+	conv, err := ex.convert(body)
 	if err != nil {
 		rec.Status, rec.Error = http.StatusBadGateway, "decoding provider response: "+err.Error()
 		writeError(w, ex.format, rec.Status, rec.Error)
 		return
 	}
+	out, usage := conv.body, conv.usage
+	rec.OutputText = conv.text
 	if usage.IsZero() {
 		usage = metering.Usage{
 			InputTokens:  metering.CountTokens(string(ex.prompt)),
@@ -144,7 +158,7 @@ func (s *Server) pipeStream(w http.ResponseWriter, r *http.Request, resp *http.R
 	rc := http.NewResponseController(w)
 	_ = rc.Flush()
 
-	defer func() { rec.Usage = ex.streamer.Usage() }()
+	defer func() { rec.Usage, rec.OutputText = ex.streamer.Usage(), ex.streamer.Output() }()
 	reader := sse.NewReader(resp.Body)
 	first := true
 	for {

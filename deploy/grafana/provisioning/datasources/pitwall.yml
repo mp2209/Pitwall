@@ -1,0 +1,22 @@
+# Prometheus holds gateway-wide metrics; Postgres holds per-task numbers,
+# which never become Prometheus labels.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: pitwall-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+  - name: Pitwall Postgres
+    uid: pitwall-postgres
+    type: grafana-postgresql-datasource
+    url: postgres:5432
+    user: pitwall
+    jsonData:
+      database: pitwall
+      sslmode: disable
+      postgresVersion: 1700
+    secureJsonData:
+      # Supplied by Compose from the environment; nothing is stored here.
+      password: ${PITWALL_GRAFANA_PG_PASSWORD}

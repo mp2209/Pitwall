@@ -173,3 +173,33 @@ func OpenAIErrorType(status int) string {
 		return "server_error"
 	}
 }
+
+// AnthropicOutputText is a Messages response's text and tool calls, for
+// tracing.
+func AnthropicOutputText(resp *anthropic.MessagesResponse) string {
+	var b strings.Builder
+	for _, block := range resp.Content {
+		switch block.Type {
+		case "text":
+			b.WriteString(block.Text)
+		case "tool_use":
+			b.WriteString("\n[tool_use " + block.Name + " " + string(block.Input) + "]")
+		}
+	}
+	return b.String()
+}
+
+// OpenAIOutputText is a chat completion's text and tool calls, for tracing.
+func OpenAIOutputText(resp *openai.ChatResponse) string {
+	var b strings.Builder
+	if len(resp.Choices) > 0 {
+		m := resp.Choices[0].Message
+		if m.Content != nil {
+			b.WriteString(*m.Content)
+		}
+		for _, tc := range m.ToolCalls {
+			b.WriteString("\n[tool_call " + tc.Function.Name + " " + tc.Function.Arguments + "]")
+		}
+	}
+	return b.String()
+}

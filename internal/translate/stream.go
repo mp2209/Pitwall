@@ -27,6 +27,8 @@ type Stream interface {
 	// or the provider sent no usage, the missing parts are estimated and
 	// Estimated is set.
 	Usage() metering.Usage
+	// Output is the text and tool calls streamed so far, for tracing.
+	Output() string
 }
 
 // counter tracks provider-reported usage and falls back to counting tokens
@@ -38,6 +40,9 @@ type counter struct {
 	prompt      []byte // the client's request body, counted only if needed
 	out         strings.Builder
 }
+
+// Output returns everything the model produced so far.
+func (c *counter) Output() string { return c.out.String() }
 
 func (c *counter) addOut(parts ...string) {
 	for _, p := range parts {

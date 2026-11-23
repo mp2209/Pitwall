@@ -52,6 +52,14 @@ func (s *RedisStore) Update(ctx context.Context, key string, ttl time.Duration, 
 	return errors.New("task state: gave up after repeated concurrent updates")
 }
 
+func (s *RedisStore) Get(ctx context.Context, key string) ([]byte, error) {
+	v, err := s.rdb.Get(ctx, key).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return nil, nil
+	}
+	return v, err
+}
+
 // MemStore keeps task state in memory, for a single gateway without Redis.
 type MemStore struct {
 	mu      sync.Mutex
@@ -67,6 +75,15 @@ type memEntry struct {
 func NewMemStore() *MemStore { return &MemStore{entries: map[string]memEntry{}, now: time.Now} }
 
 const maxMemEntries = 100_000
+
+func (s *MemStore) Get(_ context.Context, key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e, ok := s.entries[key]; ok && s.now().Before(e.expires) {
+		return e.val, nil
+	}
+	return nil, nil
+}
 
 func (s *MemStore) Update(_ context.Context, key string, ttl time.Duration, fn func([]byte) ([]byte, error)) error {
 	s.mu.Lock()

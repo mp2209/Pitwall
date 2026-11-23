@@ -62,12 +62,15 @@ type taskDelta struct {
 	prompt, maxContext   int64
 	cost                 metering.Nanos
 	estimated            bool
+	guardEvents          int
+	stopped              bool
 }
 
 const upsertTaskSQL = `INSERT INTO tasks (id, key_id, team_id, source, external_id, agent, config_label,
 	started_at, ended_at, calls, failed_calls, input_tokens, cached_read_tokens, cache_write_tokens,
-	output_tokens, prompt_tokens, repeated_input_tokens, max_context_tokens, cost_usd, estimated)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+	output_tokens, prompt_tokens, repeated_input_tokens, max_context_tokens, cost_usd, estimated,
+	guard_events, outcome)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 ON CONFLICT (id) DO UPDATE SET
 	-- A row with no calls yet is a stub made by an early outcome report.
 	started_at = CASE WHEN tasks.calls = 0 THEN excluded.started_at ELSE least(tasks.started_at, excluded.started_at) END,
@@ -83,6 +86,10 @@ ON CONFLICT (id) DO UPDATE SET
 	max_context_tokens = greatest(tasks.max_context_tokens, excluded.max_context_tokens),
 	cost_usd = tasks.cost_usd + excluded.cost_usd,
 	estimated = tasks.estimated OR excluded.estimated,
+	guard_events = tasks.guard_events + excluded.guard_events,
+	-- The guard stopping a call marks the task stopped unless an outcome
+	-- was already reported.
+	outcome = CASE WHEN excluded.outcome = 'stopped' AND tasks.outcome = 'unknown' THEN 'stopped' ELSE tasks.outcome END,
 	external_id = coalesce(tasks.external_id, excluded.external_id),
 	agent = CASE WHEN tasks.agent = '' THEN excluded.agent ELSE tasks.agent END,
 	config_label = CASE WHEN tasks.config_label = '' THEN excluded.config_label ELSE tasks.config_label END`
@@ -119,6 +126,10 @@ func upsertTasks(ctx context.Context, tx pgx.Tx, rows []RequestRow) error {
 		d.maxContext = max(d.maxContext, r.PromptTokens())
 		d.cost += r.Cost
 		d.estimated = d.estimated || r.Estimated
+		if r.GuardAction != "" {
+			d.guardEvents++
+		}
+		d.stopped = d.stopped || r.GuardAction == "stop"
 	}
 	if len(deltas) == 0 {
 		return nil
@@ -137,9 +148,13 @@ func upsertTasks(ctx context.Context, tx pgx.Tx, rows []RequestRow) error {
 		if d.first.TaskExternalID != "" {
 			external = &d.first.TaskExternalID
 		}
+		outcome := OutcomeUnknown
+		if d.stopped {
+			outcome = OutcomeStopped
+		}
 		batch.Queue(upsertTaskSQL, id, d.first.KeyID, d.first.TeamID, d.first.TaskSource, external,
 			d.first.Agent, d.first.ConfigLabel, d.start, d.end, d.calls, d.failed, d.in, d.cr, d.cw, d.out,
-			d.prompt, d.rep, d.maxContext, usdNumeric(d.cost), d.estimated)
+			d.prompt, d.rep, d.maxContext, usdNumeric(d.cost), d.estimated, d.guardEvents, outcome)
 	}
 	return tx.SendBatch(ctx, batch).Close()
 }
@@ -231,6 +246,9 @@ type TaskCall struct {
 	CostUSD             float64   `json:"cost_usd"`
 	LatencyMS           int       `json:"latency_ms"`
 	InferredTaskID      *string   `json:"inferred_task_id"`
+	BreakpointsAdded    int       `json:"breakpoints_added"`
+	GuardSignal         string    `json:"guard_signal"`
+	GuardAction         string    `json:"guard_action"`
 }
 
 // TaskWithCalls returns a task and its calls in order.
@@ -242,7 +260,7 @@ func (s *Store) TaskWithCalls(ctx context.Context, id string) (Task, []TaskCall,
 	rows, err := s.pool.Query(ctx, `SELECT id, ts, model, status,
 		input_tokens + cached_read_tokens + cache_write_tokens + cache_write_1h_tokens,
 		cached_read_tokens, cache_write_tokens + cache_write_1h_tokens, output_tokens, repeated_input_tokens,
-		cost_usd::float8, latency_ms, inferred_task_id
+		cost_usd::float8, latency_ms, inferred_task_id, breakpoints_added, guard_signal, guard_action
 		FROM requests WHERE task_id = $1 ORDER BY ts`, id)
 	if err != nil {
 		return t, nil, err
@@ -250,7 +268,8 @@ func (s *Store) TaskWithCalls(ctx context.Context, id string) (Task, []TaskCall,
 	calls, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (TaskCall, error) {
 		var c TaskCall
 		return c, r.Scan(&c.ID, &c.Time, &c.Model, &c.Status, &c.ContextTokens, &c.CachedReadTokens,
-			&c.CacheWriteTokens, &c.OutputTokens, &c.RepeatedInputTokens, &c.CostUSD, &c.LatencyMS, &c.InferredTaskID)
+			&c.CacheWriteTokens, &c.OutputTokens, &c.RepeatedInputTokens, &c.CostUSD, &c.LatencyMS, &c.InferredTaskID,
+			&c.BreakpointsAdded, &c.GuardSignal, &c.GuardAction)
 	})
 	return t, calls, err
 }

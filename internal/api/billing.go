@@ -98,6 +98,13 @@ func (s *Server) assignTask(ctx context.Context, ex *exchange, rec *Record) {
 func (s *Server) finish(ctx context.Context, ex *exchange, rec *Record) {
 	s.priceCall(ex, rec)
 	rec.RepeatedInputTokens = ex.assignment.RepeatedTokens(rec.Usage.PromptTokens())
+	if rec.TaskID != "" && rec.Cost > 0 {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), budgetTimeout)
+		if err := s.tracker.AddTaskCost(cctx, rec.TaskID, rec.Cost); err != nil {
+			s.log.Warn("task cost not added; the task cost cap may lag", "err", err, "task", rec.TaskID)
+		}
+		cancel()
+	}
 	if ex.reservation == nil || s.budget == nil {
 		return
 	}

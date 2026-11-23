@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/mp2209/pitwall/internal/metering"
@@ -37,6 +38,14 @@ type Record struct {
 	// CacheSavings is what the call would have cost without prompt caching,
 	// minus what it cost (negative when cache writes outweigh reads).
 	CacheSavings metering.Nanos
+	// BreakpointsAdded counts the cache_control markers the gateway placed;
+	// CacheOptimizer is the optimizer's outcome for the call.
+	BreakpointsAdded int
+	CacheOptimizer   string
+	// GuardEvents lists the guard signals that fired, as "signal:action";
+	// GuardAction is the strongest action ("warn" or "stop").
+	GuardEvents []string
+	GuardAction string
 
 	TaskID              string // empty if the call could not be assigned
 	TaskSource          string // tasks.SourceHeader or tasks.SourceInferred
@@ -114,6 +123,12 @@ func (l LogRecorder) Record(ctx context.Context, r Record) {
 	if r.ClientGone {
 		attrs = append(attrs, slog.Bool("client_gone", true))
 	}
+	if r.GuardAction != "" {
+		attrs = append(attrs, slog.String("guard", strings.Join(r.GuardEvents, ",")))
+	}
+	if r.BreakpointsAdded > 0 {
+		attrs = append(attrs, slog.Int("breakpoints_added", r.BreakpointsAdded))
+	}
 	level := slog.LevelInfo
 	if r.Error != "" {
 		attrs = append(attrs, slog.String("error", r.Error))
@@ -140,8 +155,9 @@ func (d DBRecorder) Record(_ context.Context, r Record) {
 		Estimated: r.Usage.Estimated, Priced: r.Priced, Cost: r.Cost, Reserved: r.Reserved,
 		LatencyMS: int(r.Latency.Milliseconds()), OverheadMS: float32(r.Overhead.Microseconds()) / 1000,
 		ClientGone: r.ClientGone, Error: r.Error,
-		RepeatedInputTokens: r.RepeatedInputTokens,
-		TaskSource:          r.TaskSource, TaskExternalID: r.TaskExternalID, Agent: r.Agent, ConfigLabel: r.ConfigLabel,
+		RepeatedInputTokens: r.RepeatedInputTokens, BreakpointsAdded: r.BreakpointsAdded,
+		GuardSignal: strings.Join(r.GuardEvents, ","), GuardAction: r.GuardAction,
+		TaskSource: r.TaskSource, TaskExternalID: r.TaskExternalID, Agent: r.Agent, ConfigLabel: r.ConfigLabel,
 	}
 	if r.TaskID != "" {
 		task := r.TaskID

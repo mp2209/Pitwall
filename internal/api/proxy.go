@@ -53,7 +53,9 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request, ex *exchange) {
 	if rec.TaskID != "" {
 		w.Header().Set(tasks.ResponseTaskID, rec.TaskID)
 	}
-
+	if !s.checkGuard(w, r.Context(), ex, &rec) {
+		return
+	}
 	if !s.reserve(w, r.Context(), ex, &rec) {
 		return
 	}

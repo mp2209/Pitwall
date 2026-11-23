@@ -32,6 +32,20 @@ task_idle_gap: 5m
 # Set to "" to turn them off.
 metrics_listen: ":9464"
 
+# The prompt-cache optimizer adds cache_control breakpoints to Anthropic
+# requests that have none. With keys it is switched per key
+# (cache_optimizer_on); this default applies in dev mode, without keys.
+cache_optimizer_default: false
+
+# Runaway-agent guard. Each signal warns (x-pitwall-warning header) at
+# `warn` and refuses the call at `stop`; 0 turns a step off.
+guard:
+  enabled: true
+  repeated_exchange: {warn: 3, stop: 5}          # same step, same result, in a row
+  repeated_tool_call: {warn: 6, stop: 10}        # same call and arguments, any result
+  context_tokens: {warn: 200000, stop: 500000}   # estimated prompt size
+  task_cost_usd: {warn: 8, stop: 10}             # the task's cost so far
+
 providers:
   - name: openai
     kind: openai

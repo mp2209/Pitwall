@@ -21,6 +21,7 @@ import (
 
 	"github.com/mp2209/pitwall/internal/auth"
 	"github.com/mp2209/pitwall/internal/config"
+	"github.com/mp2209/pitwall/internal/guard"
 	"github.com/mp2209/pitwall/internal/metering"
 	"github.com/mp2209/pitwall/internal/providers"
 	"github.com/mp2209/pitwall/internal/store"
@@ -39,6 +40,7 @@ type Server struct {
 	prices     *metering.PriceBook
 	budget     *metering.Budget
 	tracker    *tasks.Tracker
+	guard      guard.Config
 	adminToken string
 
 	unpriced sync.Map // model names already warned about
@@ -72,6 +74,7 @@ func New(cfg *config.Config, opts Options) *Server {
 	if s.tracker == nil {
 		s.tracker = tasks.NewTracker(tasks.NewMemStore())
 	}
+	s.guard = cfg.GuardSettings()
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -247,11 +250,16 @@ type call struct {
 	speed     string // "fast" if the client asked for fast mode
 	key       *auth.Key
 
-	conv        tasks.Conversation
-	taskHeader  string // x-pitwall-task
-	agent       string
-	configLabel string
-	assignment  tasks.Assignment
+	conv       tasks.Conversation
+	taskHeader string // x-pitwall-task
+	// What the cache optimizer did: breakpoints added and its outcome
+	// ("off" when disabled for this key, empty for OpenAI-format providers,
+	// which cache automatically).
+	breakpointsAdded int
+	cacheOutcome     string
+	agent            string
+	configLabel      string
+	assignment       tasks.Assignment
 
 	reservation *metering.Reservation
 }
@@ -270,5 +278,6 @@ func (c *call) record() Record {
 		r.KeyID, r.KeyPrefix, r.TeamID = c.key.ID, c.key.Prefix, c.key.TeamID
 	}
 	r.Agent, r.ConfigLabel = c.agent, c.configLabel
+	r.BreakpointsAdded, r.CacheOptimizer = c.breakpointsAdded, c.cacheOutcome
 	return r
 }

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mp2209/pitwall/internal/guard"
 )
 
 // Wire formats a provider can speak.
@@ -36,6 +38,13 @@ type Config struct {
 	// BudgetFailOpen lets calls through when Redis is unreachable, logging
 	// the failure, instead of refusing them. Default true.
 	BudgetFailOpen *bool `yaml:"budget_fail_open"`
+	// CacheOptimizerDefault turns the prompt-cache optimizer on in dev mode,
+	// where there are no keys. With keys, each key's cache_optimizer_on
+	// decides.
+	CacheOptimizerDefault bool `yaml:"cache_optimizer_default"`
+	// Guard sets the runaway-agent guard's limits; anything left out keeps
+	// its default (see guard.Defaults).
+	Guard GuardConfig `yaml:"guard"`
 	// TaskIdleGap closes an inferred task: a call after this long without
 	// one starts a new task. Default 5m.
 	TaskIdleGap time.Duration `yaml:"task_idle_gap"`
@@ -46,6 +55,35 @@ type Config struct {
 	Models        []Model    `yaml:"models"`
 
 	dir string // directory of the config file, for relative paths
+}
+
+// GuardConfig is the guard section of the config file.
+type GuardConfig struct {
+	Enabled          *bool        `yaml:"enabled"`
+	RepeatedExchange *guard.Limit `yaml:"repeated_exchange"`
+	RepeatedToolCall *guard.Limit `yaml:"repeated_tool_call"`
+	ContextTokens    *guard.Limit `yaml:"context_tokens"`
+	TaskCostUSD      *guard.Limit `yaml:"task_cost_usd"`
+}
+
+// GuardSettings merges the file's guard section over the defaults.
+func (c *Config) GuardSettings() guard.Config {
+	g := guard.Defaults()
+	if c.Guard.Enabled != nil {
+		g.Enabled = *c.Guard.Enabled
+	}
+	for _, f := range []struct {
+		from *guard.Limit
+		to   *guard.Limit
+	}{
+		{c.Guard.RepeatedExchange, &g.RepeatedExchange}, {c.Guard.RepeatedToolCall, &g.RepeatedToolCall},
+		{c.Guard.ContextTokens, &g.ContextTokens}, {c.Guard.TaskCostUSD, &g.TaskCostUSD},
+	} {
+		if f.from != nil {
+			*f.to = *f.from
+		}
+	}
+	return g
 }
 
 // FailOpen reports whether calls go through when budgets can't be checked.
@@ -174,6 +212,17 @@ func (c *Config) validate() error {
 		}
 		if p.MaxTokensParam != "max_tokens" && p.MaxTokensParam != "max_completion_tokens" {
 			errs = append(errs, fmt.Errorf("provider %q: max_tokens_param must be max_tokens or max_completion_tokens", p.Name))
+		}
+	}
+	for name, l := range map[string]*guard.Limit{
+		"repeated_exchange": c.Guard.RepeatedExchange, "repeated_tool_call": c.Guard.RepeatedToolCall,
+		"context_tokens": c.Guard.ContextTokens, "task_cost_usd": c.Guard.TaskCostUSD,
+	} {
+		if l == nil {
+			continue
+		}
+		if l.Warn < 0 || l.Stop < 0 || (l.Warn > 0 && l.Stop > 0 && l.Warn > l.Stop) {
+			errs = append(errs, fmt.Errorf("guard.%s: limits must be 0 (off) or positive, with warn at or below stop", name))
 		}
 	}
 	for i, m := range c.Models {

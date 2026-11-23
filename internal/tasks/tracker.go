@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/mp2209/pitwall/internal/metering"
 )
 
 // Sources of a task.
@@ -34,6 +36,8 @@ const (
 // is kept for ttl. fn may run more than once if another writer races it.
 type Store interface {
 	Update(ctx context.Context, key string, ttl time.Duration, fn func(old []byte) ([]byte, error)) error
+	// Get returns the current value, or nil if there is none.
+	Get(ctx context.Context, key string) ([]byte, error)
 }
 
 // Tracker assigns calls to tasks.
@@ -160,6 +164,27 @@ func openKey(keyID int64, opening uint64) string {
 }
 
 func headerKey(taskID string) string { return "pitwall:{tasks}:hdr:" + taskID }
+
+func costKey(taskID string) string { return "pitwall:{tasks}:cost:" + taskID }
+
+// TaskCost returns what a task has cost so far, as recorded by AddTaskCost.
+func (t *Tracker) TaskCost(ctx context.Context, taskID string) (metering.Nanos, error) {
+	raw, err := t.store.Get(ctx, costKey(taskID))
+	if err != nil || len(raw) == 0 {
+		return 0, err
+	}
+	n, err := strconv.ParseInt(string(raw), 10, 64)
+	return metering.Nanos(n), err
+}
+
+// AddTaskCost adds a finished call's cost to its task's running total, which
+// the guard's per-task cost cap reads before the next call.
+func (t *Tracker) AddTaskCost(ctx context.Context, taskID string, cost metering.Nanos) error {
+	return t.store.Update(ctx, costKey(taskID), t.HeaderTTL, func(old []byte) ([]byte, error) {
+		n, _ := strconv.ParseInt(string(old), 10, 64)
+		return []byte(strconv.FormatInt(n+int64(cost), 10)), nil
+	})
+}
 
 // Assign places a call in a task. When the store fails, a header task is
 // still assigned (its ID needs no state) and the error is returned

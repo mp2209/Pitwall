@@ -18,6 +18,10 @@
 //	loop  always call the first tool with identical arguments, to seed
 //	      runaway-agent tests
 //
+// [[mock:turns=N]] makes auto mode act like a multi-step agent: it calls the
+// offered tools in turn (first, second, ... wrapping around) until the
+// conversation has N assistant turns, then answers with text.
+//
 // Usage is counted at four bytes per token. Prompt caching is simulated: an
 // Anthropic prefix ending at a cache_control mark, or an OpenAI prefix of at
 // least MinCacheTokens ending at a message boundary, is a cache hit if an
@@ -79,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 // behavior is the resolved plan for one request.
 type behavior struct {
 	mode       string
+	turns      int
 	delay      time.Duration
 	chunkDelay time.Duration
 	errStatus  int
@@ -112,6 +117,10 @@ func (s *Server) behavior(r *http.Request, promptText string) behavior {
 			if code, err := strconv.Atoi(val); err == nil {
 				b.errStatus = code
 			}
+		case "turns":
+			if n, err := strconv.Atoi(val); err == nil && n >= 0 {
+				b.turns = n
+			}
 		}
 	}
 	for header, key := range map[string]string{
@@ -137,17 +146,24 @@ type reply struct {
 
 func (r reply) isTool() bool { return r.toolName != "" }
 
-func decide(mode string, tools []toolDef, lastIsToolResult bool, lastUser string, n int64) reply {
-	callTool := false
-	switch mode {
+func decide(b behavior, tools []toolDef, lastIsToolResult bool, lastUser string, assistantTurns int, n int64) reply {
+	callTool, pick := false, 0
+	switch b.mode {
 	case "tool", "loop":
 		callTool = len(tools) > 0
 	case "text":
 	default:
-		callTool = len(tools) > 0 && !lastIsToolResult
+		if b.turns > 0 {
+			callTool = len(tools) > 0 && assistantTurns < b.turns
+			if len(tools) > 0 {
+				pick = assistantTurns % len(tools)
+			}
+		} else {
+			callTool = len(tools) > 0 && !lastIsToolResult
+		}
 	}
 	if callTool {
-		t := tools[0]
+		t := tools[pick]
 		return reply{
 			toolName: t.name,
 			toolArgs: argsFromSchema(t.schema),

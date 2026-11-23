@@ -47,6 +47,9 @@ type RequestRow struct {
 
 	InferredTaskID      *string `json:"inferred_task_id"`
 	RepeatedInputTokens int64   `json:"repeated_input_tokens"`
+	BreakpointsAdded    int     `json:"breakpoints_added"`
+	GuardSignal         string  `json:"guard_signal"`
+	GuardAction         string  `json:"guard_action"`
 
 	// Task attributes, used to create or update the task's row; not
 	// columns of requests.
@@ -66,6 +69,7 @@ var requestColumns = []string{
 	"stream", "status", "input_tokens", "cached_read_tokens", "cache_write_tokens", "cache_write_1h_tokens",
 	"output_tokens", "speed", "inference_geo", "estimated", "priced", "cost_usd", "reserved_usd",
 	"latency_ms", "ttft_ms", "overhead_ms", "client_gone", "error", "inferred_task_id", "repeated_input_tokens",
+	"breakpoints_added", "guard_signal", "guard_action",
 }
 
 // usdNumeric stores nanodollars exactly as numeric(18,9).
@@ -86,6 +90,7 @@ func (s *Store) InsertRequests(ctx context.Context, rows []RequestRow) error {
 					r.Stream, r.Status, r.InputTokens, r.CachedReadTokens, r.CacheWriteTokens, r.CacheWrite1hTokens,
 					r.OutputTokens, r.Speed, r.InferenceGeo, r.Estimated, r.Priced, usdNumeric(r.Cost), usdNumeric(r.Reserved),
 					r.LatencyMS, r.TTFTMS, r.OverheadMS, r.ClientGone, r.Error, r.InferredTaskID, r.RepeatedInputTokens,
+					r.BreakpointsAdded, r.GuardSignal, r.GuardAction,
 				}, nil
 			}))
 		if err != nil {
@@ -104,7 +109,7 @@ func (s *Store) RecentRequests(ctx context.Context, keyID int64, limit int) ([]R
 		provider, stream, status, input_tokens, cached_read_tokens, cache_write_tokens, cache_write_1h_tokens,
 		output_tokens, speed, inference_geo, estimated, priced, (cost_usd * 1000000000)::bigint,
 		(reserved_usd * 1000000000)::bigint, latency_ms, ttft_ms, overhead_ms, client_gone, error,
-		inferred_task_id, repeated_input_tokens
+		inferred_task_id, repeated_input_tokens, breakpoints_added, guard_signal, guard_action
 		FROM requests WHERE ($1 = 0 OR key_id = $1) ORDER BY ts DESC LIMIT $2`, keyID, limit)
 	if err != nil {
 		return nil, err
@@ -115,7 +120,7 @@ func (s *Store) RecentRequests(ctx context.Context, keyID int64, limit int) ([]R
 			&r.Provider, &r.Stream, &r.Status, &r.InputTokens, &r.CachedReadTokens, &r.CacheWriteTokens,
 			&r.CacheWrite1hTokens, &r.OutputTokens, &r.Speed, &r.InferenceGeo, &r.Estimated, &r.Priced,
 			&r.Cost, &r.Reserved, &r.LatencyMS, &r.TTFTMS, &r.OverheadMS, &r.ClientGone, &r.Error,
-			&r.InferredTaskID, &r.RepeatedInputTokens)
+			&r.InferredTaskID, &r.RepeatedInputTokens, &r.BreakpointsAdded, &r.GuardSignal, &r.GuardAction)
 		r.CostUSD = r.Cost.USD()
 		return r, err
 	})

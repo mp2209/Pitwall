@@ -76,7 +76,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			writeError(w, format, http.StatusInternalServerError, err.Error())
 			return
 		}
-		ex.path, ex.body = "/v1/messages", up
+		ex.path, ex.body = "/v1/messages", s.optimizeCache(ex, up)
 		if req.Stream {
 			ex.streamer = translate.NewAnthropicToOpenAIStream(req.Model, clientWantsUsage, body)
 		}
@@ -122,7 +122,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			writeError(w, format, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 			return
 		}
-		ex.path, ex.rawQuery, ex.body = "/v1/messages", r.URL.RawQuery, up
+		ex.path, ex.rawQuery, ex.body = "/v1/messages", r.URL.RawQuery, s.optimizeCache(ex, up)
 		if req.Stream {
 			ex.streamer = translate.NewAnthropicPassthrough(body)
 		}

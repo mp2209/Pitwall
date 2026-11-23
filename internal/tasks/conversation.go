@@ -27,6 +27,9 @@ type Conversation struct {
 	Prefix   []uint64
 	Bytes    []int
 	Messages int // conversation messages, not counting tools and system
+	// Loop measures repetition at the end of the conversation, for the
+	// runaway-agent guard.
+	Loop LoopStats
 
 	pieces [][]byte
 }
@@ -150,6 +153,7 @@ func FromAnthropic(req *anthropic.MessagesRequest) Conversation {
 	}
 	b.conv.Messages = len(req.Messages)
 	b.conv.Opening = opening(system, firstUser)
+	b.conv.Loop = loopStats(anthropicLoopMsgs(req.Messages))
 	return b.conv
 }
 
@@ -180,6 +184,7 @@ func FromOpenAI(req *openai.ChatRequest) Conversation {
 	}
 	b.conv.Messages = len(req.Messages) - i
 	b.conv.Opening = opening(system, firstUser)
+	b.conv.Loop = loopStats(openAILoopMsgs(req.Messages[i:]))
 	return b.conv
 }
 

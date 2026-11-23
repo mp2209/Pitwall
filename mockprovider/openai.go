@@ -88,7 +88,13 @@ func (s *Server) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		tools[i] = toolDef{name: t.Function.Name, schema: t.Function.Parameters}
 	}
 	n := s.seq.Add(1)
-	rep := decide(b.mode, tools, req.Messages[len(req.Messages)-1].Role == "tool", lastUser, n)
+	assistantTurns := 0
+	for _, m := range req.Messages {
+		if m.Role == "assistant" {
+			assistantTurns++
+		}
+	}
+	rep := decide(b, tools, req.Messages[len(req.Messages)-1].Role == "tool", lastUser, assistantTurns, n)
 	output := tokens(len(rep.text) + len(rep.toolName) + len(rep.toolArgs))
 	usage := map[string]any{
 		"prompt_tokens":         prompt,

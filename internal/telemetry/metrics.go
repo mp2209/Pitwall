@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -34,8 +35,10 @@ type Metrics struct {
 	tasksStarted   *prometheus.CounterVec
 	budgetRefusals prometheus.Counter
 	clientGone     prometheus.Counter
-	// GuardTriggers counts runaway-agent guard actions by signal (Phase 4).
+	// GuardTriggers counts runaway-agent guard warnings and stops by signal.
 	GuardTriggers *prometheus.CounterVec
+	cacheOpt      *prometheus.CounterVec
+	breakpoints   prometheus.Counter
 }
 
 var latencyBuckets = []float64{0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60, 120, 300}
@@ -89,8 +92,15 @@ func NewMetrics() *Metrics {
 	m.GuardTriggers = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "pitwall_guard_triggers_total", Help: "Runaway-agent guard warnings and stops, by signal and action.",
 	}, []string{"signal", "action"})
+	m.cacheOpt = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "pitwall_cache_optimizer_calls_total",
+		Help: "Anthropic-format calls by what the cache optimizer did: applied, client_managed, too_short, not_applicable, off.",
+	}, []string{"outcome"})
+	m.breakpoints = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "pitwall_cache_breakpoints_added_total", Help: "cache_control breakpoints the gateway added.",
+	})
 	for _, c := range []prometheus.Collector{m.calls, m.tokens, m.cost, m.costUncached, m.repeated, m.duration,
-		m.ttft, m.overhead, m.tasksStarted, m.budgetRefusals, m.clientGone, m.GuardTriggers} {
+		m.ttft, m.overhead, m.tasksStarted, m.budgetRefusals, m.clientGone, m.GuardTriggers, m.cacheOpt, m.breakpoints} {
 		f(c)
 	}
 	return m
@@ -127,6 +137,16 @@ func (m *Metrics) Record(_ context.Context, r api.Record) {
 	}
 	if r.TaskID != "" && r.CallIndex == 1 {
 		m.tasksStarted.WithLabelValues(r.TaskSource).Inc()
+	}
+	for _, e := range r.GuardEvents {
+		signal, action, _ := strings.Cut(e, ":")
+		m.GuardTriggers.WithLabelValues(signal, action).Inc()
+	}
+	if r.CacheOptimizer != "" {
+		m.cacheOpt.WithLabelValues(r.CacheOptimizer).Inc()
+	}
+	if r.BreakpointsAdded > 0 {
+		m.breakpoints.Add(float64(r.BreakpointsAdded))
 	}
 	if r.Status == 0 || r.Status >= 400 && !r.ClientGone {
 		return

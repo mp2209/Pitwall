@@ -102,3 +102,82 @@ func TestWordsRejoin(t *testing.T) {
 		t.Errorf("words do not rejoin: %q", got)
 	}
 }
+
+// anthropicTurns builds a request with the given messages, a long system
+// prompt, and a cache_control marker on the last block of message `mark`
+// (-1 for none).
+func anthropicTurns(system string, msgs []string, mark int) string {
+	var parts []string
+	for i, text := range msgs {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		cc := ""
+		if i == mark {
+			cc = `,"cache_control":{"type":"ephemeral"}`
+		}
+		parts = append(parts, fmt.Sprintf(`{"role":%q,"content":[{"type":"text","text":%q%s}]}`, role, text, cc))
+	}
+	return fmt.Sprintf(`{"model":"m","max_tokens":10,"system":%q,"messages":[%s]}`, system, strings.Join(parts, ","))
+}
+
+func cacheUsage(v map[string]any) (read, write float64) {
+	u := v["usage"].(map[string]any)
+	return u["cache_read_input_tokens"].(float64), u["cache_creation_input_tokens"].(float64)
+}
+
+// In an agent loop the client moves the marker to the newest turn each call.
+// The previous entry is found by looking back from the new marker, even
+// though the old marker is gone, so the whole previous prompt is a hit.
+func TestMovingMarkerHitsThroughLookback(t *testing.T) {
+	ts := httptest.NewServer(New(Config{MinCacheTokens: 50}).Handler())
+	defer ts.Close()
+	sys := strings.Repeat("Rules of this repository. ", 40)
+	msgs := []string{"Fix the bug", "Running tests", strings.Repeat("FAIL output ", 30)}
+	r1, w1 := cacheUsage(call(t, ts.URL+"/v1/messages", anthropicTurns(sys, msgs, 2)))
+	if r1 != 0 || w1 == 0 {
+		t.Fatalf("first call: read %v write %v", r1, w1)
+	}
+	msgs = append(msgs, "Editing parser.go", strings.Repeat("ok ", 30))
+	r2, w2 := cacheUsage(call(t, ts.URL+"/v1/messages", anthropicTurns(sys, msgs, 4)))
+	if r2 != w1 || w2 == 0 {
+		t.Errorf("second call: read %v (want the %v written), write %v", r2, w1, w2)
+	}
+}
+
+func TestLookbackIsLimitedToTwentyPositions(t *testing.T) {
+	ts := httptest.NewServer(New(Config{MinCacheTokens: 10}).Handler())
+	defer ts.Close()
+	sys := strings.Repeat("context ", 50)
+	msgs := []string{"start"}
+	call(t, ts.URL+"/v1/messages", anthropicTurns(sys, msgs, 0))
+	for i := range 24 { // 24 new positions before the next marker
+		msgs = append(msgs, fmt.Sprintf("step %d", i))
+	}
+	if r, _ := cacheUsage(call(t, ts.URL+"/v1/messages", anthropicTurns(sys, msgs, len(msgs)-1))); r != 0 {
+		t.Errorf("an entry more than 20 positions back should be missed, read %v", r)
+	}
+}
+
+func TestTurnsModeCyclesToolsThenAnswers(t *testing.T) {
+	ts := httptest.NewServer(New(Config{}).Handler())
+	defer ts.Close()
+	tools := `"tools":[{"name":"a","input_schema":{"type":"object"}},{"name":"b","input_schema":{"type":"object"}}]`
+	msgs := `{"role":"user","content":"[[mock:turns=3]] go"}`
+	var names []string
+	for range 4 {
+		v := call(t, ts.URL+"/v1/messages", `{"model":"m","max_tokens":10,`+tools+`,"messages":[`+msgs+`]}`)
+		block := v["content"].([]any)[0].(map[string]any)
+		if block["type"] != "tool_use" {
+			names = append(names, "text")
+			break
+		}
+		names = append(names, block["name"].(string))
+		msgs += fmt.Sprintf(`,{"role":"assistant","content":[{"type":"tool_use","id":%q,"name":%q,"input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":%q,"content":"ok"}]}`,
+			block["id"], block["name"], block["id"])
+	}
+	if got := strings.Join(names, ","); got != "a,b,a,text" {
+		t.Errorf("turn sequence = %s, want a,b,a,text", got)
+	}
+}

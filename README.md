@@ -5,11 +5,11 @@ model call into the task it belongs to, and answers the question a
 per-request bill can't: **what does it cost to finish a task, and which model
 and harness setup does it cheapest?**
 
-> **Status: Phases 0–3 of 6 complete.** The proxy speaks both API formats,
-> every call carries a virtual key, a cost row and a budget check, and calls
-> are grouped into agent tasks with per-task cost, call count and context
-> growth. Automatic prompt caching, the runaway-agent guard and the harness
-> benchmark are next (see [Roadmap](#roadmap)). Findings will lead this
+> **Status: Phases 0–4 of 6 complete.** The proxy speaks both API formats,
+> every call carries a virtual key, a cost row and a budget check, calls are
+> grouped into agent tasks, the gateway adds prompt-cache breakpoints for
+> clients that don't, and a guard stops agents stuck in a loop. The harness
+> benchmark is next (see [Roadmap](#roadmap)). Findings will lead this
 > README once the benchmark has results.
 
 ## What works today
@@ -64,6 +64,28 @@ and harness setup does it cheapest?**
 - **A minimal agent** ([`agent/`](agent/agent.go)) for the benchmark: read
   files, run the tests, edit, repeat; no shell tool; optional trimming of old
   tool output; it reports its outcome from its own test run.
+
+**Prompt caching and the runaway-agent guard** ([design note](docs/decisions/0004-cache-optimizer-and-guard.md))
+
+- **Automatic cache breakpoints**, switched per key: for Anthropic requests
+  without any `cache_control`, one marker after the tools and system prompt
+  and one on the newest turn, within the 4-marker limit and each model's
+  minimum cacheable length. Clients that place their own markers are left
+  alone. Every call records the breakpoints added; Prometheus exports what
+  the calls would have cost without caching.
+- **A guard against runaway agents**, read from the conversation each call
+  resends: the same step with the same result repeated (warn at 3, stop at
+  5), the same tool call repeated (6, 10), context size, and the task's cost
+  so far. It warns with an `x-pitwall-warning` header, then refuses with a
+  400 the agent shows its user, and marks the task `stopped`. An agent that
+  changes approach can carry on.
+- **Measured on the mock provider** ([results](bench/results/phase4.md)):
+  the optimizer cut cost per task 16% with full history and 7% when old
+  tool output is trimmed (trimming rewrites what the previous turn cached).
+  The guard stopped 10 of 10 seeded loops at their 6th call, after warning at
+  the 4th, and none of 20 normal runs; a caught loop cost $0.008 instead of
+  $0.21 for the same loop left to run 30 calls. These check the mechanisms on
+  a scripted agent; real-model numbers come from the benchmark.
 
 **Tested against real clients**: the official OpenAI and Anthropic Python
 SDKs (in CI) and Claude Code, on both same-format and cross-format routes,
@@ -221,6 +243,10 @@ Environment:
 | `PITWALL_ADMIN_TOKEN` | Bootstrap bearer token for `/admin` |
 | `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | Turn on Langfuse traces |
 
+The `guard` section sets the guard's warn and stop limits, and
+`cache_optimizer_default` turns the cache optimizer on in dev mode; with keys,
+each key's `cache_optimizer_on` decides.
+
 `budget_fail_open` (default `true`) decides what happens when Redis is down:
 let calls through and log it, or refuse them. `task_idle_gap` (default `5m`)
 closes inferred tasks; `metrics_listen` (default `:9464`) serves Prometheus
@@ -253,7 +279,9 @@ cmd/mockprovider/     mock provider binary
 cmd/agent/            agent binary
 agent/                minimal agent loop used by the benchmark
 internal/api/         HTTP handlers, streaming relay, billing, admin and task API
-internal/tasks/       task header and inference
+internal/tasks/       task header, inference and loop detection
+internal/cacheopt/    prompt-cache breakpoint insertion
+internal/guard/       runaway-agent guard
 internal/telemetry/   Prometheus metrics, Langfuse exporter, PII redaction
 internal/auth/        virtual keys, hashing, key cache
 internal/metering/    usage, prices and cost, Redis budgets, tokenizer
@@ -264,6 +292,8 @@ internal/sse/         server-sent event reader and writer
 internal/config/      YAML config and price file
 mockprovider/         fake OpenAI + Anthropic server
 bench/tasks/          benchmark tasks: tiny repos with failing tests
+bench/experiments/    measurement scripts
+bench/results/        measured results
 config/               gateway config and price table
 deploy/               docker-compose.yml, Postgres init, Prometheus, Grafana
 docs/decisions/       design notes
@@ -278,6 +308,6 @@ scripts/              SDK smoke test
 | 1 | Both API formats, streaming, tool calls, OpenAI/Anthropic/Ollama adapters | done |
 | 2 | Postgres schema, virtual keys, cost from a price table, async request log, reserve-then-settle budgets in Redis | done |
 | 3 | Task traces: `x-pitwall-task` header, inferred tasks, Langfuse, Grafana task panel | done |
-| 4 | Automatic prompt-cache breakpoints (switchable per key); runaway-agent guard | next |
-| 5 | Harness benchmark: ~20 coding tasks × configurations × 3 repeats | |
+| 4 | Automatic prompt-cache breakpoints (switchable per key); runaway-agent guard | done |
+| 5 | Harness benchmark: ~20 coding tasks × configurations × 3 repeats | next |
 | 6 | Write-up: findings, blog post, demo | |

@@ -241,6 +241,10 @@ func (failingStore) Update(context.Context, string, time.Duration, func([]byte) 
 	return errors.New("redis down")
 }
 
+func (failingStore) Get(context.Context, string) ([]byte, error) {
+	return nil, errors.New("redis down")
+}
+
 func TestStoreFailure(t *testing.T) {
 	tr := NewTracker(failingStore{})
 	conv := FromAnthropic(newRun("sys", "x").request())

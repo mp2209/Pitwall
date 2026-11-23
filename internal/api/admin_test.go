@@ -33,7 +33,11 @@ type fullStack struct {
 
 // newFullStack runs the gateway as production does: Postgres store and
 // request log, virtual keys, prices synced from the price file, budgets.
-func newFullStack(t *testing.T) *fullStack {
+func newFullStack(t *testing.T) *fullStack { return newFullStackWith(t, "") }
+
+// newFullStackWith adds extra YAML (for example a guard section) to the
+// gateway config.
+func newFullStackWith(t *testing.T, extra string) *fullStack {
 	t.Helper()
 	st := storetest.New(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -47,7 +51,7 @@ models:
   - {match: mock-gpt, provider: mock-openai}
   - {match: mock-claude, provider: mock-anthropic}
   - {match: new-claude, provider: mock-anthropic}
-`, mock.URL))
+%[2]s`, mock.URL, extra))
 	if err != nil {
 		t.Fatal(err)
 	}

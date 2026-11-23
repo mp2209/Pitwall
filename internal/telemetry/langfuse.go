@@ -137,9 +137,13 @@ func (l *Langfuse) Record(_ context.Context, r api.Record) {
 		"metadata": map[string]any{
 			"request_id": r.ID, "provider": r.Provider, "requested_model": r.Model, "client_format": r.ClientFormat,
 			"status": r.Status, "estimated": r.Usage.Estimated, "repeated_input_tokens": r.RepeatedInputTokens,
-			"inferred_task_id": r.InferredTaskID,
+			"inferred_task_id": r.InferredTaskID, "cache_optimizer": r.CacheOptimizer,
+			"breakpoints_added": r.BreakpointsAdded, "guard": r.GuardEvents,
 		},
 		"level": "DEFAULT",
+	}
+	if r.GuardAction == "warn" {
+		gen["level"] = "WARNING"
 	}
 	if r.Priced {
 		gen["costDetails"] = map[string]float64{"total": r.Cost.USD()}

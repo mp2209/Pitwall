@@ -67,23 +67,36 @@ func (s *Server) handleAnthropic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simulated prompt caching: prefixes end only at cache_control marks,
-	// in the provider's order of tools, system, messages.
+	// Simulated prompt caching, after Anthropic's rules: every block boundary
+	// is a position (a run of tool_use or of tool_result blocks counts as
+	// one), entries are written at cache_control breakpoints, and each
+	// breakpoint looks back up to 20 positions for an earlier entry. Markers
+	// are stripped before hashing: moving a marker doesn't change content.
 	h := newPrefixHasher()
-	var points []point
+	var positions []point
+	var breakpoints []int
 	for _, t := range req.Tools {
 		h.add([]byte(t.Name))
 		h.add(t.InputSchema)
+		positions = append(positions, h.point())
 		if len(t.CacheControl) > 0 {
-			points = append(points, h.point())
+			breakpoints = append(breakpoints, len(positions)-1)
 		}
 	}
 	addBlocks := func(raw json.RawMessage) []anBlock {
 		raws, blocks := anBlocks(raw)
+		prevType := ""
 		for i, rb := range raws {
-			h.add(rb)
+			h.add(withoutCacheControl(rb))
+			typ := blocks[i].Type
+			if (typ == "tool_use" || typ == "tool_result") && typ == prevType {
+				positions[len(positions)-1] = h.point() // same run, same position
+			} else {
+				positions = append(positions, h.point())
+			}
+			prevType = typ
 			if len(blocks[i].CacheControl) > 0 {
-				points = append(points, h.point())
+				breakpoints = append(breakpoints, len(positions)-1)
 			}
 		}
 		return blocks
@@ -91,11 +104,14 @@ func (s *Server) handleAnthropic(w http.ResponseWriter, r *http.Request) {
 	if len(req.System) > 0 {
 		addBlocks(req.System)
 	}
-	lastUser, lastIsToolResult := "", false
+	lastUser, lastIsToolResult, assistantTurns := "", false, 0
 	for _, m := range req.Messages {
 		h.add([]byte(m.Role))
 		blocks := addBlocks(m.Content)
-		if m.Role == "user" {
+		switch m.Role {
+		case "assistant":
+			assistantTurns++
+		case "user":
 			lastIsToolResult = false
 			for _, bl := range blocks {
 				switch bl.Type {
@@ -111,7 +127,7 @@ func (s *Server) handleAnthropic(w http.ResponseWriter, r *http.Request) {
 		lastIsToolResult = false
 	}
 	total := tokens(h.bytes)
-	read, written := s.cache.lookup(points, s.cfg.MinCacheTokens)
+	read, written := s.cache.lookupBreakpoints(positions, breakpoints, s.cfg.MinCacheTokens)
 	input := max(total-read-written, 0)
 
 	tools := make([]toolDef, len(req.Tools))
@@ -119,7 +135,7 @@ func (s *Server) handleAnthropic(w http.ResponseWriter, r *http.Request) {
 		tools[i] = toolDef{name: t.Name, schema: t.InputSchema}
 	}
 	n := s.seq.Add(1)
-	rep := decide(b.mode, tools, lastIsToolResult, lastUser, n)
+	rep := decide(b, tools, lastIsToolResult, lastUser, assistantTurns, n)
 	rep.toolID = "toolu_mock_" + itoa(n)
 	output := tokens(len(rep.text) + len(rep.toolName) + len(rep.toolArgs))
 	stop := "end_turn"
@@ -222,3 +238,19 @@ func anError(w http.ResponseWriter, status int, msg string) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// withoutCacheControl drops a block's cache_control marker before hashing.
+// Every object block is re-serialized the same way (sorted keys), marked or
+// not, so the same content always hashes the same.
+func withoutCacheControl(raw json.RawMessage) []byte {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return raw
+	}
+	delete(m, "cache_control")
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
+}

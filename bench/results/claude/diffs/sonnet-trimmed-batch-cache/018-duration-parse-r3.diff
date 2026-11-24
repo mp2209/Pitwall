@@ -1,0 +1,77 @@
+--- a/duration.go
++++ b/duration.go
+@@ -3,6 +3,9 @@
+ 
+ import (
+ 	"fmt"
++	"math"
++	"strconv"
++	"strings"
+ 	"time"
+ )
+ 
+@@ -10,22 +13,49 @@
+ 	"d": 24 * time.Hour, "h": time.Hour, "m": time.Minute, "s": time.Second, "ms": time.Millisecond,
+ }
+ 
+-// Parse reads a duration like "1h30m" or "2d".
++func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
++func isNum(c byte) bool   { return (c >= '0' && c <= '9') || c == '.' }
++func isAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
++
++// Parse reads a duration like "1h30m", "1.5h" or "2d".
+ func Parse(s string) (time.Duration, error) {
+-	var total time.Duration
+-	num := 0
+-	for _, r := range s {
+-		switch {
+-		case r >= '0' && r <= '9':
+-			num = num*10 + int(r-'0')
+-		default:
+-			u, ok := units[string(r)]
+-			if !ok {
+-				return 0, fmt.Errorf("unknown unit %q", r)
+-			}
+-			total += time.Duration(num) * u
+-			num = 0
++	var total float64
++	i := 0
++	parts := 0
++	for {
++		for i < len(s) && isSpace(s[i]) {
++			i++
+ 		}
++		if i >= len(s) {
++			break
++		}
++		start := i
++		for i < len(s) && isNum(s[i]) {
++			i++
++		}
++		if start == i {
++			return 0, fmt.Errorf("missing number at %q", s[start:])
++		}
++		n, err := strconv.ParseFloat(s[start:i], 64)
++		if err != nil {
++			return 0, fmt.Errorf("invalid number %q", s[start:i])
++		}
++		start = i
++		for i < len(s) && isAlpha(s[i]) {
++			i++
++		}
++		if start == i {
++			return 0, fmt.Errorf("missing unit after %q", s[:start])
++		}
++		u, ok := units[strings.ToLower(s[start:i])]
++		if !ok {
++			return 0, fmt.Errorf("unknown unit %q", s[start:i])
++		}
++		total += n * float64(u)
++		parts++
+ 	}
+-	return total, nil
++	if parts == 0 {
++		return 0, fmt.Errorf("empty duration")
++	}
++	return time.Duration(math.Round(total)), nil
+ }

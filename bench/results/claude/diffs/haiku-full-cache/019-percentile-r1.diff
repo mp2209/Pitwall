@@ -1,0 +1,32 @@
+--- a/stats.go
++++ b/stats.go
+@@ -3,6 +3,7 @@
+ 
+ import (
+ 	"errors"
++	"math"
+ 	"sort"
+ )
+ 
+@@ -11,9 +12,18 @@
+ 	if len(xs) == 0 {
+ 		return 0, errors.New("no data")
+ 	}
+-	sort.Float64s(xs)
+-	i := int(p / 100 * float64(len(xs)))
+-	return xs[i], nil
++	if !(p >= 0 && p <= 100) {
++		return 0, errors.New("percentile out of range")
++	}
++	sorted := append([]float64(nil), xs...)
++	sort.Float64s(sorted)
++	rank := p / 100 * float64(len(sorted)-1)
++	lo := int(math.Floor(rank))
++	if lo >= len(sorted)-1 {
++		return sorted[len(sorted)-1], nil
++	}
++	frac := rank - float64(lo)
++	return sorted[lo] + frac*(sorted[lo+1]-sorted[lo]), nil
+ }
+ 
+ // Median returns the 50th percentile of xs.

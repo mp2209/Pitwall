@@ -1,0 +1,22 @@
+{
+  "name": "dry-run",
+  "description": "The whole pipeline on the mock provider. Outcomes are scripted (solve_rate, loop_rate), so this checks the harness, not a model.",
+  "gateway": "http://localhost:8080",
+  "repeats": 2,
+  "max_turns": 20,
+  "max_tokens": 2048,
+  "budget_usd": 0,
+  "tasks": ["*"],
+  "configs": [
+    {"label": "mock-full-nocache", "model": "mock-claude", "cache_optimizer": false, "keep_tool_results": 0,
+     "mock": {"solve_rate": 0.7, "loop_rate": 0.1, "cheat_rate": 0.05}},
+    {"label": "mock-full-cache", "model": "mock-claude", "cache_optimizer": true, "keep_tool_results": 0,
+     "mock": {"solve_rate": 0.7, "loop_rate": 0.1, "cheat_rate": 0.05}},
+    {"label": "mock-trimmed-cache", "model": "mock-claude", "cache_optimizer": true, "keep_tool_results": 2,
+     "mock": {"solve_rate": 0.7, "loop_rate": 0.1, "cheat_rate": 0.05}},
+    {"label": "mock-trimmed-batch-cache", "model": "mock-claude", "cache_optimizer": true, "keep_tool_results": 2,
+     "trim_batch": 4, "mock": {"solve_rate": 0.7, "loop_rate": 0.1, "cheat_rate": 0.05}},
+    {"label": "mock-openai-format", "model": "mock-gpt", "cache_optimizer": false, "keep_tool_results": 0,
+     "mock": {"solve_rate": 0.7, "loop_rate": 0.1, "cheat_rate": 0.05}}
+  ]
+}

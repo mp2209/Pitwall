@@ -29,6 +29,7 @@ func main() {
 	maxTurns := flag.Int("max-turns", 30, "most model calls before giving up")
 	maxTokens := flag.Int64("max-tokens", 8192, "max_tokens per call")
 	keep := flag.Int("keep-tool-results", 0, "trim all but the newest N tool results (0 keeps full history)")
+	trimBatch := flag.Int("trim-batch", 1, "move the trim point in steps of this many results, keeping the cached prefix stable in between")
 	task := flag.String("task", "", "task label sent as x-pitwall-task (default: directory name plus a unique suffix)")
 	config := flag.String("config", "", "configuration label sent as x-pitwall-config")
 	flag.Parse()
@@ -56,7 +57,7 @@ func main() {
 	res := agent.Run(ctx, agent.Config{
 		GatewayURL: *gateway, APIKey: key, Model: *model, Dir: abs, Prompt: *prompt,
 		TestCmd: strings.Fields(*testCmd), MaxTurns: *maxTurns, MaxTokens: *maxTokens,
-		KeepToolResults: *keep, Task: *task, ConfigLabel: *config,
+		KeepToolResults: *keep, TrimBatch: *trimBatch, Task: *task, ConfigLabel: *config,
 	})
 	out, _ := json.MarshalIndent(res, "", "  ")
 	fmt.Println(string(out))

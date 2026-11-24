@@ -1,0 +1,84 @@
+--- a/duration.go
++++ b/duration.go
+@@ -3,6 +3,8 @@
+ 
+ import (
+ 	"fmt"
++	"math"
++	"strconv"
+ 	"time"
+ )
+ 
+@@ -10,22 +12,60 @@
+ 	"d": 24 * time.Hour, "h": time.Hour, "m": time.Minute, "s": time.Second, "ms": time.Millisecond,
+ }
+ 
+-// Parse reads a duration like "1h30m" or "2d".
++// Parse reads a duration like "1h30m", "2d", "1.5h" or "1h 30m".
+ func Parse(s string) (time.Duration, error) {
+ 	var total time.Duration
+-	num := 0
+-	for _, r := range s {
+-		switch {
+-		case r >= '0' && r <= '9':
+-			num = num*10 + int(r-'0')
+-		default:
+-			u, ok := units[string(r)]
+-			if !ok {
+-				return 0, fmt.Errorf("unknown unit %q", r)
++	i := 0
++	parts := 0
++	for {
++		for i < len(s) && s[i] == ' ' {
++			i++
++		}
++		if i == len(s) {
++			break
++		}
++
++		// number: digits with an optional single decimal point
++		start := i
++		dot := false
++		digits := 0
++		for i < len(s) {
++			c := s[i]
++			if c >= '0' && c <= '9' {
++				digits++
++			} else if c == '.' && !dot {
++				dot = true
++			} else {
++				break
+ 			}
+-			total += time.Duration(num) * u
+-			num = 0
++			i++
+ 		}
++		if digits == 0 {
++			return 0, fmt.Errorf("invalid duration %q: expected a number at offset %d", s, start)
++		}
++		num, err := strconv.ParseFloat(s[start:i], 64)
++		if err != nil {
++			return 0, fmt.Errorf("invalid number %q: %v", s[start:i], err)
++		}
++
++		// unit: letters
++		ustart := i
++		for i < len(s) && s[i] >= 'a' && s[i] <= 'z' {
++			i++
++		}
++		if ustart == i {
++			return 0, fmt.Errorf("invalid duration %q: missing unit after %q", s, s[start:i])
++		}
++		u, ok := units[s[ustart:i]]
++		if !ok {
++			return 0, fmt.Errorf("unknown unit %q", s[ustart:i])
++		}
++
++		total += time.Duration(math.Round(num * float64(u)))
++		parts++
++	}
++	if parts == 0 {
++		return 0, fmt.Errorf("empty duration")
+ 	}
+ 	return total, nil
+ }

@@ -1,0 +1,41 @@
+--- a/tmpl.go
++++ b/tmpl.go
+@@ -1,12 +1,33 @@
+ // Package tmpl fills {{placeholders}} in text.
+ package tmpl
+ 
+-import "strings"
++import (
++	"fmt"
++	"strings"
++)
+ 
+-// Render replaces each {{key}} in t with vars[key].
++// Render replaces each {{key}} in t with vars[key]. Spaces around the key
++// are allowed. Inserted values are not expanded again.
+ func Render(t string, vars map[string]string) (string, error) {
+-	for k, v := range vars {
+-		t = strings.ReplaceAll(t, "{{"+k+"}}", v)
++	var b strings.Builder
++	for {
++		i := strings.Index(t, "{{")
++		if i < 0 {
++			b.WriteString(t)
++			return b.String(), nil
++		}
++		b.WriteString(t[:i])
++		rest := t[i+2:]
++		j := strings.Index(rest, "}}")
++		if j < 0 {
++			return "", fmt.Errorf("tmpl: unclosed placeholder at offset %d", len(b.String()))
++		}
++		key := strings.TrimSpace(rest[:j])
++		v, ok := vars[key]
++		if !ok {
++			return "", fmt.Errorf("tmpl: no value for placeholder %q", key)
++		}
++		b.WriteString(v)
++		t = rest[j+2:]
+ 	}
+-	return t, nil
+ }

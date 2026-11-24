@@ -86,11 +86,28 @@ func TestRenderTrimsOldToolOutput(t *testing.T) {
 		}
 		return trimmed
 	}
-	if n := count(render("p", turns, 0)); n != 0 {
+	if n := count(render("p", turns, 0, 0)); n != 0 {
 		t.Errorf("full history trimmed %d results", n)
 	}
-	if n := count(render("p", turns, 1)); n != 2 {
+	if n := count(render("p", turns, 1, 0)); n != 2 {
 		t.Errorf("keep=1 trimmed %d results, want 2", n)
+	}
+	// In batches of 2, the trim point moves only when two more results can
+	// go: with 3 results and keep=1 that is now (2 trimmed); with 4 it stays.
+	if n := count(render("p", turns, 1, 2)); n != 2 {
+		t.Errorf("keep=1 batch=2, 3 results: trimmed %d, want 2", n)
+	}
+	four := make([]turn, 0, 5)
+	four = append(four, turns...)
+	four = append(four, turn{assistant: &assistant, results: []toolResult{{id: "d", content: long}}})
+	if n := count(render("p", four, 1, 2)); n != 2 {
+		t.Errorf("keep=1 batch=2, 4 results: trimmed %d, want 2", n)
+	}
+	if n := count(render("p", append(four, four[0]), 1, 2)); n != 4 {
+		t.Errorf("keep=1 batch=2, 5 results: trimmed %d, want 4", n)
+	}
+	if n := count(render("p", four, 1, 1)); n != 3 {
+		t.Errorf("keep=1 batch=1, 4 results: trimmed %d, want 3", n)
 	}
 }
 

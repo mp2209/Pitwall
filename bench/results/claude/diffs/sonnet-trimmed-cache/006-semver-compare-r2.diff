@@ -1,0 +1,102 @@
+--- a/semver.go
++++ b/semver.go
+@@ -6,5 +6,98 @@
+ // Compare returns -1, 0 or 1 as version a is lower than, equal to, or
+ // higher than version b.
+ func Compare(a, b string) int {
+-	return strings.Compare(a, b)
++	coreA, preA := split(a)
++	coreB, preB := split(b)
++
++	for i := 0; i < 3; i++ {
++		if c := cmpNum(coreA[i], coreB[i]); c != 0 {
++			return c
++		}
++	}
++
++	// A version without pre-release comes after one with a pre-release.
++	switch {
++	case preA == "" && preB == "":
++		return 0
++	case preA == "":
++		return 1
++	case preB == "":
++		return -1
++	}
++
++	idsA := strings.Split(preA, ".")
++	idsB := strings.Split(preB, ".")
++	for i := 0; i < len(idsA) && i < len(idsB); i++ {
++		x, y := idsA[i], idsB[i]
++		nx, ny := isNum(x), isNum(y)
++		var c int
++		switch {
++		case nx && ny:
++			c = cmpNum(x, y)
++		case nx:
++			c = -1
++		case ny:
++			c = 1
++		default:
++			c = strings.Compare(x, y)
++		}
++		if c != 0 {
++			return c
++		}
++	}
++	switch {
++	case len(idsA) < len(idsB):
++		return -1
++	case len(idsA) > len(idsB):
++		return 1
++	}
++	return 0
+ }
++
++// split returns the major, minor, patch strings and the pre-release string.
++func split(v string) ([3]string, string) {
++	v = strings.TrimPrefix(v, "v")
++	if i := strings.IndexByte(v, '+'); i >= 0 {
++		v = v[:i]
++	}
++	pre := ""
++	if i := strings.IndexByte(v, '-'); i >= 0 {
++		pre = v[i+1:]
++		v = v[:i]
++	}
++	var core [3]string
++	parts := strings.SplitN(v, ".", 3)
++	for i := range core {
++		if i < len(parts) {
++			core[i] = parts[i]
++		} else {
++			core[i] = "0"
++		}
++	}
++	return core, pre
++}
++
++func isNum(s string) bool {
++	if s == "" {
++		return false
++	}
++	for i := 0; i < len(s); i++ {
++		if s[i] < '0' || s[i] > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// cmpNum compares two decimal digit strings numerically.
++func cmpNum(x, y string) int {
++	x = strings.TrimLeft(x, "0")
++	y = strings.TrimLeft(y, "0")
++	if len(x) != len(y) {
++		if len(x) < len(y) {
++			return -1
++		}
++		return 1
++	}
++	return strings.Compare(x, y)
++}

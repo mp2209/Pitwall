@@ -1,0 +1,18 @@
+{
+  "name": "claude",
+  "description": "Three Claude models and four harness setups on Sonnet, all through Pitwall. Sonnet with full history and no caching is the baseline the others pair against. budget_usd is a hard cap: the gateway refuses calls once the run's team has spent it.",
+  "gateway": "http://localhost:8080",
+  "repeats": 3,
+  "max_turns": 30,
+  "max_tokens": 8192,
+  "budget_usd": 40,
+  "tasks": ["*"],
+  "configs": [
+    {"label": "sonnet-full-nocache", "model": "claude-sonnet-5-5", "cache_optimizer": false, "keep_tool_results": 0},
+    {"label": "sonnet-full-cache", "model": "claude-sonnet-5-5", "cache_optimizer": true, "keep_tool_results": 0},
+    {"label": "sonnet-trimmed-cache", "model": "claude-sonnet-5-5", "cache_optimizer": true, "keep_tool_results": 3},
+    {"label": "sonnet-trimmed-batch-cache", "model": "claude-sonnet-5-5", "cache_optimizer": true, "keep_tool_results": 3, "trim_batch": 4},
+    {"label": "haiku-full-cache", "model": "claude-haiku-5-5", "cache_optimizer": true, "keep_tool_results": 0},
+    {"label": "opus-full-cache", "model": "claude-opus-5-5", "cache_optimizer": true, "keep_tool_results": 0}
+  ]
+}

@@ -1,0 +1,39 @@
+--- a/wrap.go
++++ b/wrap.go
+@@ -1,18 +1,30 @@
+ // Package wrap breaks text into lines.
+ package wrap
+ 
+-import "strings"
++import (
++	"strings"
++	"unicode/utf8"
++)
+ 
+ // Wrap breaks text into lines of at most width characters.
+ func Wrap(text string, width int) []string {
+ 	var lines []string
+ 	line := ""
+-	for _, w := range strings.Split(text, " ") {
+-		if len(line)+len(w) > width {
++	n := 0
++	for _, w := range strings.Fields(text) {
++		wn := utf8.RuneCountInString(w)
++		if n == 0 {
++			line, n = w, wn
++		} else if n+1+wn <= width {
++			line += " " + w
++			n += 1 + wn
++		} else {
+ 			lines = append(lines, line)
+-			line = ""
++			line, n = w, wn
+ 		}
+-		line += w + " "
+ 	}
+-	return append(lines, line)
++	if n > 0 {
++		lines = append(lines, line)
++	}
++	return lines
+ }

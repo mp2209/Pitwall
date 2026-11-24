@@ -22,6 +22,11 @@
 // offered tools in turn (first, second, ... wrapping around) until the
 // conversation has N assistant turns, then answers with text.
 //
+// [[mock:script=B]] makes auto mode play a fixed list of tool calls, one per
+// assistant turn, then answer with text. B is base64url (no padding) of a
+// JSON array like [{"name":"read_file","input":{"path":"a.go"}}]. The
+// benchmark's dry run uses it to replay a reference fix through a real agent.
+//
 // Usage is counted at four bytes per token. Prompt caching is simulated: an
 // Anthropic prefix ending at a cache_control mark, or an OpenAI prefix of at
 // least MinCacheTokens ending at a message boundary, is a cache hit if an
@@ -29,7 +34,9 @@
 package mockprovider
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
@@ -87,6 +94,33 @@ type behavior struct {
 	delay      time.Duration
 	chunkDelay time.Duration
 	errStatus  int
+	script     []scriptStep
+}
+
+// scriptStep is one tool call of a [[mock:script=...]] directive.
+type scriptStep struct {
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
+func parseScript(val string) ([]scriptStep, bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(val)
+	if err != nil {
+		return nil, false
+	}
+	var steps []scriptStep
+	if json.Unmarshal(raw, &steps) != nil {
+		return nil, false
+	}
+	for i, st := range steps {
+		if st.Name == "" {
+			return nil, false
+		}
+		if len(st.Input) == 0 || string(st.Input) == "null" {
+			steps[i].Input = json.RawMessage(`{}`)
+		}
+	}
+	return steps, true
 }
 
 var directiveRe = regexp.MustCompile(`\[\[mock:([a-z_]+)=([^\]]+)\]\]`)
@@ -121,6 +155,10 @@ func (s *Server) behavior(r *http.Request, promptText string) behavior {
 			if n, err := strconv.Atoi(val); err == nil && n >= 0 {
 				b.turns = n
 			}
+		case "script":
+			if steps, ok := parseScript(val); ok {
+				b.script = steps
+			}
 		}
 	}
 	for header, key := range map[string]string{
@@ -147,6 +185,17 @@ type reply struct {
 func (r reply) isTool() bool { return r.toolName != "" }
 
 func decide(b behavior, tools []toolDef, lastIsToolResult bool, lastUser string, assistantTurns int, n int64) reply {
+	if b.script != nil && b.mode == "auto" {
+		if assistantTurns < len(b.script) {
+			st := b.script[assistantTurns]
+			var compact bytes.Buffer
+			if json.Compact(&compact, st.Input) != nil {
+				compact.WriteString("{}")
+			}
+			return reply{toolName: st.Name, toolArgs: compact.String(), toolID: fmt.Sprintf("call_mock_%d", n)}
+		}
+		return reply{text: "The mock provider followed its script and is done."}
+	}
 	callTool, pick := false, 0
 	switch b.mode {
 	case "tool", "loop":

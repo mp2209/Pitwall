@@ -1,0 +1,98 @@
+--- a/semver.go
++++ b/semver.go
+@@ -6,5 +6,95 @@
+ // Compare returns -1, 0 or 1 as version a is lower than, equal to, or
+ // higher than version b.
+ func Compare(a, b string) int {
++	coreA, preA := split(a)
++	coreB, preB := split(b)
++
++	ca, cb := strings.Split(coreA, "."), strings.Split(coreB, ".")
++	for i := 0; i < 3; i++ {
++		if c := compareNum(part(ca, i), part(cb, i)); c != 0 {
++			return c
++		}
++	}
++
++	// A version without pre-release is higher than one with.
++	switch {
++	case preA == "" && preB == "":
++		return 0
++	case preA == "":
++		return 1
++	case preB == "":
++		return -1
++	}
++
++	ia, ib := strings.Split(preA, "."), strings.Split(preB, ".")
++	for i := 0; i < len(ia) && i < len(ib); i++ {
++		x, y := ia[i], ib[i]
++		nx, ny := isNum(x), isNum(y)
++		var c int
++		switch {
++		case nx && ny:
++			c = compareNum(x, y)
++		case nx:
++			c = -1
++		case ny:
++			c = 1
++		default:
++			c = strings.Compare(x, y)
++		}
++		if c != 0 {
++			return c
++		}
++	}
++	switch {
++	case len(ia) < len(ib):
++		return -1
++	case len(ia) > len(ib):
++		return 1
++	}
++	return 0
++}
++
++// split strips a leading "v" and build metadata, returning the core
++// version and the pre-release part.
++func split(v string) (core, pre string) {
++	v = strings.TrimPrefix(v, "v")
++	if i := strings.IndexByte(v, '+'); i >= 0 {
++		v = v[:i]
++	}
++	if i := strings.IndexByte(v, '-'); i >= 0 {
++		return v[:i], v[i+1:]
++	}
++	return v, ""
++}
++
++func part(s []string, i int) string {
++	if i < len(s) {
++		return s[i]
++	}
++	return "0"
++}
++
++func isNum(s string) bool {
++	if s == "" {
++		return false
++	}
++	for _, r := range s {
++		if r < '0' || r > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// compareNum compares decimal digit strings numerically without overflow.
++func compareNum(a, b string) int {
++	a = strings.TrimLeft(a, "0")
++	b = strings.TrimLeft(b, "0")
++	if len(a) != len(b) {
++		if len(a) < len(b) {
++			return -1
++		}
++		return 1
++	}
+ 	return strings.Compare(a, b)
+ }

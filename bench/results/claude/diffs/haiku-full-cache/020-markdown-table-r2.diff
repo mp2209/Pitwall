@@ -1,0 +1,49 @@
+--- a/mdtable.go
++++ b/mdtable.go
+@@ -1,18 +1,29 @@
+ // Package mdtable renders Markdown tables.
+ package mdtable
+ 
+-import "strings"
++import (
++	"strings"
++	"unicode/utf8"
++)
++
++// escape makes a cell safe for a Markdown table row.
++func escape(s string) string {
++	return strings.ReplaceAll(s, "|", `\|`)
++}
+ 
+ // Table renders header and rows as a Markdown table.
+ func Table(header []string, rows [][]string) string {
+ 	widths := make([]int, len(header))
+ 	for i, h := range header {
+-		widths[i] = len(h)
++		widths[i] = max(3, utf8.RuneCountInString(escape(h)))
+ 	}
+ 	for _, r := range rows {
+ 		for i, c := range r {
+-			if len(c) > widths[i] {
+-				widths[i] = len(c)
++			if i >= len(widths) {
++				break
++			}
++			if n := utf8.RuneCountInString(escape(c)); n > widths[i] {
++				widths[i] = n
+ 			}
+ 		}
+ 	}
+@@ -20,7 +31,11 @@
+ 	line := func(cells []string) {
+ 		b.WriteString("|")
+ 		for i, w := range widths {
+-			b.WriteString(" " + cells[i] + strings.Repeat(" ", w-len(cells[i])) + " |")
++			cell := ""
++			if i < len(cells) {
++				cell = escape(cells[i])
++			}
++			b.WriteString(" " + cell + strings.Repeat(" ", w-utf8.RuneCountInString(cell)) + " |")
+ 		}
+ 		b.WriteString("\n")
+ 	}

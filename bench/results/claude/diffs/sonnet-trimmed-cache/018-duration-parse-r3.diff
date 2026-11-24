@@ -1,0 +1,89 @@
+--- a/duration.go
++++ b/duration.go
+@@ -3,6 +3,8 @@
+ 
+ import (
+ 	"fmt"
++	"math"
++	"strconv"
+ 	"time"
+ )
+ 
+@@ -10,22 +12,63 @@
+ 	"d": 24 * time.Hour, "h": time.Hour, "m": time.Minute, "s": time.Second, "ms": time.Millisecond,
+ }
+ 
+-// Parse reads a duration like "1h30m" or "2d".
++func isDigit(c byte) bool { return c >= '0' && c <= '9' }
++
++func isLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
++
++// Parse reads a duration like "1h30m", "1.5h" or "2d". Parts may be
++// separated by spaces.
+ func Parse(s string) (time.Duration, error) {
+-	var total time.Duration
+-	num := 0
+-	for _, r := range s {
+-		switch {
+-		case r >= '0' && r <= '9':
+-			num = num*10 + int(r-'0')
+-		default:
+-			u, ok := units[string(r)]
+-			if !ok {
+-				return 0, fmt.Errorf("unknown unit %q", r)
++	var total float64
++	parts := 0
++	i := 0
++	for i < len(s) {
++		if s[i] == ' ' {
++			i++
++			continue
++		}
++		// number
++		start := i
++		digits := 0
++		dots := 0
++		for i < len(s) && (isDigit(s[i]) || s[i] == '.') {
++			if s[i] == '.' {
++				dots++
++			} else {
++				digits++
+ 			}
+-			total += time.Duration(num) * u
+-			num = 0
++			i++
+ 		}
++		if digits == 0 || dots > 1 {
++			if start == i {
++				return 0, fmt.Errorf("expected number at %q", s[start:])
++			}
++			return 0, fmt.Errorf("invalid number %q", s[start:i])
++		}
++		num, err := strconv.ParseFloat(s[start:i], 64)
++		if err != nil {
++			return 0, err
++		}
++		// unit
++		ustart := i
++		for i < len(s) && isLetter(s[i]) {
++			i++
++		}
++		if ustart == i {
++			return 0, fmt.Errorf("missing unit after %q", s[start:i])
++		}
++		u, ok := units[s[ustart:i]]
++		if !ok {
++			return 0, fmt.Errorf("unknown unit %q", s[ustart:i])
++		}
++		total += num * float64(u)
++		parts++
+ 	}
+-	return total, nil
++	if parts == 0 {
++		return 0, fmt.Errorf("empty duration")
++	}
++	if total > math.MaxInt64 {
++		return 0, fmt.Errorf("duration overflow")
++	}
++	return time.Duration(math.Round(total)), nil
+ }

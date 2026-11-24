@@ -1,0 +1,20 @@
+--- a/ratelimit.go
++++ b/ratelimit.go
+@@ -23,9 +23,14 @@
+ // Allow takes n tokens if they are available and reports whether it did.
+ func (b *Bucket) Allow(n int) bool {
+ 	t := b.now()
+-	elapsed := int(t.Sub(b.last).Seconds())
+-	b.tokens += float64(elapsed) * b.rate
+-	b.last = t
++	elapsed := t.Sub(b.last).Seconds()
++	if elapsed > 0 {
++		b.tokens += elapsed * b.rate
++		if b.tokens > b.capacity {
++			b.tokens = b.capacity
++		}
++		b.last = t
++	}
+ 	if b.tokens < float64(n) {
+ 		return false
+ 	}

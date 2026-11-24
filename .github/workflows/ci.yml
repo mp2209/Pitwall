@@ -69,6 +69,45 @@ jobs:
           for i in $(seq 1 50); do curl -sf localhost:8080/healthz && break; sleep 0.2; done
       - run: python scripts/sdk_smoke.py
 
+  # The benchmark: every task fails as shipped and passes with its reference
+  # fix, and a short dry run on the mock goes through runner, gateway,
+  # database and analysis.
+  bench:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pitwall
+          POSTGRES_DB: pitwall
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pitwall" --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      PITWALL_DATABASE_URL: postgres://pitwall@localhost:5432/pitwall?sslmode=disable
+      PITWALL_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: python3 bench/check_tasks.py
+      - run: make build
+      - name: Start mock provider and gateway
+        run: |
+          echo "PITWALL_ADMIN_TOKEN=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+          export PITWALL_ADMIN_TOKEN="$(tail -1 "$GITHUB_ENV" | cut -d= -f2)"
+          bin/mockprovider & bin/gateway &
+          for i in $(seq 1 50); do curl -sf localhost:8080/healthz && break; sleep 0.2; done
+      - run: python3 bench/run.py --plan bench/plans/dry-run.json --out /tmp/bench --limit 15 --jobs 3
+      - run: python3 bench/analyze.py /tmp/bench && cat /tmp/bench/results.md
+
   docker:
     runs-on: ubuntu-latest
     steps:

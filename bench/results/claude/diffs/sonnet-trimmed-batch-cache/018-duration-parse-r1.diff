@@ -1,0 +1,85 @@
+--- a/duration.go
++++ b/duration.go
+@@ -3,6 +3,7 @@
+ 
+ import (
+ 	"fmt"
++	"strings"
+ 	"time"
+ )
+ 
+@@ -10,22 +11,62 @@
+ 	"d": 24 * time.Hour, "h": time.Hour, "m": time.Minute, "s": time.Second, "ms": time.Millisecond,
+ }
+ 
+-// Parse reads a duration like "1h30m" or "2d".
++func isDigit(c byte) bool { return c >= '0' && c <= '9' }
++
++func isLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
++
++// Parse reads a duration like "1h30m", "1.5h" or "2d".
+ func Parse(s string) (time.Duration, error) {
+ 	var total time.Duration
+-	num := 0
+-	for _, r := range s {
+-		switch {
+-		case r >= '0' && r <= '9':
+-			num = num*10 + int(r-'0')
+-		default:
+-			u, ok := units[string(r)]
+-			if !ok {
+-				return 0, fmt.Errorf("unknown unit %q", r)
++	i := 0
++	parts := 0
++	for {
++		for i < len(s) && s[i] == ' ' {
++			i++
++		}
++		if i >= len(s) {
++			break
++		}
++		// number: digits with optional fractional part
++		start := i
++		var whole float64
++		for i < len(s) && isDigit(s[i]) {
++			whole = whole*10 + float64(s[i]-'0')
++			i++
++		}
++		digits := i - start
++		var frac float64
++		if i < len(s) && s[i] == '.' {
++			i++
++			scale := 0.1
++			fs := i
++			for i < len(s) && isDigit(s[i]) {
++				frac += float64(s[i]-'0') * scale
++				scale /= 10
++				i++
+ 			}
+-			total += time.Duration(num) * u
+-			num = 0
++			digits += i - fs
+ 		}
++		if digits == 0 {
++			return 0, fmt.Errorf("expected number at %q", s[start:])
++		}
++		us := i
++		for i < len(s) && isLetter(s[i]) {
++			i++
++		}
++		name := s[us:i]
++		if name == "" {
++			return 0, fmt.Errorf("missing unit in %q", s)
++		}
++		u, ok := units[strings.ToLower(name)]
++		if !ok {
++			return 0, fmt.Errorf("unknown unit %q", name)
++		}
++		total += time.Duration(whole)*u + time.Duration(frac*float64(u)+0.5)
++		parts++
++	}
++	if parts == 0 {
++		return 0, fmt.Errorf("empty duration")
+ 	}
+ 	return total, nil
+ }

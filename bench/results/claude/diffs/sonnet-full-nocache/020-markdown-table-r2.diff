@@ -1,0 +1,70 @@
+--- a/mdtable.go
++++ b/mdtable.go
+@@ -1,18 +1,38 @@
+ // Package mdtable renders Markdown tables.
+ package mdtable
+ 
+-import "strings"
++import (
++	"strings"
++	"unicode/utf8"
++)
++
++func escape(s string) string {
++	return strings.ReplaceAll(s, "|", "\\|")
++}
+ 
+ // Table renders header and rows as a Markdown table.
+ func Table(header []string, rows [][]string) string {
+-	widths := make([]int, len(header))
+-	for i, h := range header {
+-		widths[i] = len(h)
++	n := len(header)
++	norm := func(cells []string) []string {
++		out := make([]string, n)
++		for i := 0; i < n && i < len(cells); i++ {
++			out[i] = escape(cells[i])
++		}
++		return out
+ 	}
+-	for _, r := range rows {
++	h := norm(header)
++	body := make([][]string, len(rows))
++	for i, r := range rows {
++		body[i] = norm(r)
++	}
++	widths := make([]int, n)
++	for i := range widths {
++		widths[i] = 3
++	}
++	for _, r := range append([][]string{h}, body...) {
+ 		for i, c := range r {
+-			if len(c) > widths[i] {
+-				widths[i] = len(c)
++			if w := utf8.RuneCountInString(c); w > widths[i] {
++				widths[i] = w
+ 			}
+ 		}
+ 	}
+@@ -20,17 +40,17 @@
+ 	line := func(cells []string) {
+ 		b.WriteString("|")
+ 		for i, w := range widths {
+-			b.WriteString(" " + cells[i] + strings.Repeat(" ", w-len(cells[i])) + " |")
++			b.WriteString(" " + cells[i] + strings.Repeat(" ", w-utf8.RuneCountInString(cells[i])) + " |")
+ 		}
+ 		b.WriteString("\n")
+ 	}
+-	line(header)
+-	seps := make([]string, len(widths))
++	line(h)
++	seps := make([]string, n)
+ 	for i, w := range widths {
+ 		seps[i] = strings.Repeat("-", w)
+ 	}
+ 	line(seps)
+-	for _, r := range rows {
++	for _, r := range body {
+ 		line(r)
+ 	}
+ 	return b.String()

@@ -1,0 +1,325 @@
+{
+  "plans": [
+    "claude"
+  ],
+  "configs": [
+    {
+      "config": "haiku-full-cache",
+      "model": "claude-haiku-5-5",
+      "cache_optimizer": true,
+      "keep_tool_results": 0,
+      "trim_batch": 1,
+      "runs": 60,
+      "solved": 60,
+      "solve_rate": 1.0,
+      "solve_rate_ci": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "stopped_by_guard": 0,
+      "warned_not_stopped": 0,
+      "calls_before_stop": null,
+      "cost_of_stopped_usd": 0,
+      "tests_modified": 0,
+      "errors": 0,
+      "cost_usd": 0.052579025,
+      "cost_per_run_usd": 0.0008763170833333333,
+      "cost_per_solved_usd": 0.0008763170833333333,
+      "cost_per_solved_ci": [
+        0.0007354355,
+        0.00101940575
+      ],
+      "tokens_per_solved": 8302.066666666668,
+      "tokens_per_solved_ci": [
+        6835.733333333334,
+        9971.533333333333
+      ],
+      "per_solved_split": {
+        "input": 929.0,
+        "cache_read": 4285.25,
+        "cache_write": 2142.25,
+        "output": 945.5666666666667
+      },
+      "cache_read_share": 0.5825120641609461,
+      "repeated_share": 0.539110537166678,
+      "mean_turns_solved": 3.85,
+      "median_seconds": 4.845000000000001,
+      "median_seconds_solved": 4.845000000000001,
+      "max_context_tokens": 5214.0
+    },
+    {
+      "config": "sonnet-full-cache",
+      "model": "claude-sonnet-5-5",
+      "cache_optimizer": true,
+      "keep_tool_results": 0,
+      "trim_batch": 1,
+      "runs": 60,
+      "solved": 60,
+      "solve_rate": 1.0,
+      "solve_rate_ci": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "stopped_by_guard": 0,
+      "warned_not_stopped": 0,
+      "calls_before_stop": null,
+      "cost_of_stopped_usd": 0,
+      "tests_modified": 0,
+      "errors": 0,
+      "cost_usd": 0.7684984,
+      "cost_per_run_usd": 0.012808306666666667,
+      "cost_per_solved_usd": 0.012808306666666667,
+      "cost_per_solved_ci": [
+        0.010662501666666666,
+        0.015151053333333333
+      ],
+      "tokens_per_solved": 6528.883333333333,
+      "tokens_per_solved_ci": [
+        5652.683333333333,
+        7400.416666666667
+      ],
+      "per_solved_split": {
+        "input": 928.4333333333333,
+        "cache_read": 3505.65,
+        "cache_write": 1379.6166666666666,
+        "output": 715.1833333333333
+      },
+      "cache_read_share": 0.6029980907167553,
+      "repeated_share": 0.5359925692760205,
+      "mean_turns_solved": 3.566666666666667,
+      "median_seconds": 6.475,
+      "median_seconds_solved": 6.475,
+      "max_context_tokens": 3881.0
+    },
+    {
+      "config": "sonnet-trimmed-cache",
+      "model": "claude-sonnet-5-5",
+      "cache_optimizer": true,
+      "keep_tool_results": 3,
+      "trim_batch": 1,
+      "runs": 60,
+      "solved": 60,
+      "solve_rate": 1.0,
+      "solve_rate_ci": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "stopped_by_guard": 0,
+      "warned_not_stopped": 0,
+      "calls_before_stop": null,
+      "cost_of_stopped_usd": 0,
+      "tests_modified": 0,
+      "errors": 27,
+      "cost_usd": 0.7797661,
+      "cost_per_run_usd": 0.012996101666666668,
+      "cost_per_solved_usd": 0.012996101666666668,
+      "cost_per_solved_ci": [
+        0.011069776666666666,
+        0.014914323333333333
+      ],
+      "tokens_per_solved": 5501.533333333334,
+      "tokens_per_solved_ci": [
+        4864.866666666667,
+        6237.366666666667
+      ],
+      "per_solved_split": {
+        "input": 927.8333333333334,
+        "cache_read": 2289.35,
+        "cache_write": 1590.9333333333334,
+        "output": 693.4166666666666
+      },
+      "cache_read_share": 0.4761427724646171,
+      "repeated_share": 0.4679205648781401,
+      "mean_turns_solved": 3.716666666666667,
+      "median_seconds": 6.8100000000000005,
+      "median_seconds_solved": 6.8100000000000005,
+      "max_context_tokens": 3587.0
+    },
+    {
+      "config": "sonnet-full-nocache",
+      "model": "claude-sonnet-5-5",
+      "cache_optimizer": false,
+      "keep_tool_results": 0,
+      "trim_batch": 1,
+      "runs": 60,
+      "solved": 60,
+      "solve_rate": 1.0,
+      "solve_rate_ci": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "stopped_by_guard": 0,
+      "warned_not_stopped": 0,
+      "calls_before_stop": null,
+      "cost_of_stopped_usd": 0,
+      "tests_modified": 0,
+      "errors": 0,
+      "cost_usd": 1.111932,
+      "cost_per_run_usd": 0.0185322,
+      "cost_per_solved_usd": 0.0185322,
+      "cost_per_solved_ci": [
+        0.015799133333333333,
+        0.0212081
+      ],
+      "tokens_per_solved": 6434.166666666667,
+      "tokens_per_solved_ci": [
+        5582.933333333333,
+        7268.05
+      ],
+      "per_solved_split": {
+        "input": 5726.183333333333,
+        "cache_read": 0.0,
+        "cache_write": 0.0,
+        "output": 707.9833333333333
+      },
+      "cache_read_share": 0.0,
+      "repeated_share": 0.5321578363715215,
+      "mean_turns_solved": 3.533333333333333,
+      "median_seconds": 6.02,
+      "median_seconds_solved": 6.02,
+      "max_context_tokens": 3832.0
+    },
+    {
+      "config": "sonnet-trimmed-batch-cache",
+      "model": "claude-sonnet-5-5",
+      "cache_optimizer": true,
+      "keep_tool_results": 3,
+      "trim_batch": 4,
+      "runs": 60,
+      "solved": 60,
+      "solve_rate": 1.0,
+      "solve_rate_ci": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "stopped_by_guard": 0,
+      "warned_not_stopped": 0,
+      "calls_before_stop": null,
+      "cost_of_stopped_usd": 0,
+      "tests_modified": 0,
+      "errors": 0,
+      "cost_usd": 0.7531035,
+      "cost_per_run_usd": 0.012551725000000001,
+      "cost_per_solved_usd": 0.012551725000000001,
+      "cost_per_solved_ci": [
+        0.010282781666666666,
+        0.014936043333333334
+      ],
+      "tokens_per_solved": 6494.566666666667,
+      "tokens_per_solved_ci": [
+        5663.883333333333,
+        7316.166666666667
+      ],
+      "per_solved_split": {
+        "input": 928.4333333333333,
+        "cache_read": 3563.1666666666665,
+        "cache_write": 1292.15,
+        "output": 710.8166666666667
+      },
+      "cache_read_share": 0.6160651249909949,
+      "repeated_share": 0.5215042143937757,
+      "mean_turns_solved": 3.566666666666667,
+      "median_seconds": 6.7,
+      "median_seconds_solved": 6.7,
+      "max_context_tokens": 3924.0
+    },
+    {
+      "config": "opus-full-cache",
+      "model": "claude-opus-5-5",
+      "cache_optimizer": true,
+      "keep_tool_results": 0,
+      "trim_batch": 1,
+      "runs": 60,
+      "solved": 60,
+      "solve_rate": 1.0,
+      "solve_rate_ci": [
+        0.9398260695220669,
+        0.9999999999999999
+      ],
+      "stopped_by_guard": 0,
+      "warned_not_stopped": 0,
+      "calls_before_stop": null,
+      "cost_of_stopped_usd": 0,
+      "tests_modified": 0,
+      "errors": 0,
+      "cost_usd": 1.5177602000000001,
+      "cost_per_run_usd": 0.025296003333333334,
+      "cost_per_solved_usd": 0.025296003333333334,
+      "cost_per_solved_ci": [
+        0.021466656666666663,
+        0.029264733333333334
+      ],
+      "tokens_per_solved": 6583.933333333333,
+      "tokens_per_solved_ci": [
+        5717.6,
+        7462.25
+      ],
+      "per_solved_split": {
+        "input": 928.5333333333333,
+        "cache_read": 3518.1,
+        "cache_write": 1457.85,
+        "output": 679.45
+      },
+      "cache_read_share": 0.5958353680395406,
+      "repeated_share": 0.5419949247605633,
+      "mean_turns_solved": 3.6166666666666667,
+      "median_seconds": 9.09,
+      "median_seconds_solved": 9.09,
+      "max_context_tokens": 3785.0
+    }
+  ],
+  "paired": [
+    {
+      "config": "haiku-full-cache",
+      "baseline": "sonnet-full-nocache",
+      "pairs": 60,
+      "cost_change": -0.952713812535299,
+      "cheaper_runs": 60,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    },
+    {
+      "config": "sonnet-full-cache",
+      "baseline": "sonnet-full-nocache",
+      "pairs": 60,
+      "cost_change": -0.30886205271545375,
+      "cheaper_runs": 59,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    },
+    {
+      "config": "sonnet-trimmed-cache",
+      "baseline": "sonnet-full-nocache",
+      "pairs": 60,
+      "cost_change": -0.2987286093034466,
+      "cheaper_runs": 52,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    },
+    {
+      "config": "sonnet-trimmed-batch-cache",
+      "baseline": "sonnet-full-nocache",
+      "pairs": 60,
+      "cost_change": -0.32270723389559786,
+      "cheaper_runs": 59,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    },
+    {
+      "config": "opus-full-cache",
+      "baseline": "sonnet-full-nocache",
+      "pairs": 60,
+      "cost_change": 0.36497573592629795,
+      "cheaper_runs": 5,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    }
+  ],
+  "task_inference": {
+    "runs_checked": 360,
+    "grouped_correctly": 360,
+    "split": 0,
+    "merged": 0,
+    "accuracy": 1.0
+  }
+}

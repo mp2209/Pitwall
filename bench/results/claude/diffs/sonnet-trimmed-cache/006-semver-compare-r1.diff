@@ -1,0 +1,99 @@
+--- a/semver.go
++++ b/semver.go
+@@ -6,5 +6,96 @@
+ // Compare returns -1, 0 or 1 as version a is lower than, equal to, or
+ // higher than version b.
+ func Compare(a, b string) int {
++	coreA, preA := split(a)
++	coreB, preB := split(b)
++
++	for i := 0; i < 3; i++ {
++		if c := cmpNum(coreA[i], coreB[i]); c != 0 {
++			return c
++		}
++	}
++
++	// A version without a pre-release is higher than one with it.
++	if preA == "" && preB == "" {
++		return 0
++	}
++	if preA == "" {
++		return 1
++	}
++	if preB == "" {
++		return -1
++	}
++
++	idA := strings.Split(preA, ".")
++	idB := strings.Split(preB, ".")
++	for i := 0; i < len(idA) && i < len(idB); i++ {
++		if c := cmpIdent(idA[i], idB[i]); c != 0 {
++			return c
++		}
++	}
++	switch {
++	case len(idA) < len(idB):
++		return -1
++	case len(idA) > len(idB):
++		return 1
++	}
++	return 0
++}
++
++// split returns the major, minor, patch strings and the pre-release part.
++func split(v string) ([3]string, string) {
++	v = strings.TrimPrefix(v, "v")
++	if i := strings.IndexByte(v, '+'); i >= 0 {
++		v = v[:i]
++	}
++	pre := ""
++	if i := strings.IndexByte(v, '-'); i >= 0 {
++		v, pre = v[:i], v[i+1:]
++	}
++	var core [3]string
++	parts := strings.Split(v, ".")
++	for i := 0; i < 3; i++ {
++		if i < len(parts) {
++			core[i] = parts[i]
++		}
++	}
++	return core, pre
++}
++
++func isNum(s string) bool {
++	if s == "" {
++		return false
++	}
++	for i := 0; i < len(s); i++ {
++		if s[i] < '0' || s[i] > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// cmpNum compares two decimal digit strings numerically (empty is zero).
++func cmpNum(a, b string) int {
++	a = strings.TrimLeft(a, "0")
++	b = strings.TrimLeft(b, "0")
++	if len(a) != len(b) {
++		if len(a) < len(b) {
++			return -1
++		}
++		return 1
++	}
+ 	return strings.Compare(a, b)
+ }
++
++func cmpIdent(a, b string) int {
++	na, nb := isNum(a), isNum(b)
++	switch {
++	case na && nb:
++		return cmpNum(a, b)
++	case na:
++		return -1
++	case nb:
++		return 1
++	}
++	return strings.Compare(a, b)
++}

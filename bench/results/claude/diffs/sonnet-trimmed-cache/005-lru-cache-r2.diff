@@ -1,0 +1,18 @@
+--- a/lru.go
++++ b/lru.go
+@@ -26,6 +26,7 @@
+ 	if !ok {
+ 		return 0, false
+ 	}
++	c.order.MoveToFront(el)
+ 	return el.Value.(*entry).value, true
+ }
+ 
+@@ -34,6 +35,7 @@
+ func (c *Cache) Put(key string, value int) {
+ 	if el, ok := c.items[key]; ok {
+ 		el.Value.(*entry).value = value
++		c.order.MoveToFront(el)
+ 		return
+ 	}
+ 	c.items[key] = c.order.PushFront(&entry{key, value})

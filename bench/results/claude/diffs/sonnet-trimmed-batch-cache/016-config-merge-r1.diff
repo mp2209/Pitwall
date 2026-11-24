@@ -1,0 +1,47 @@
+--- a/merge.go
++++ b/merge.go
+@@ -1,11 +1,42 @@
+ // Package config merges layered configuration.
+ package config
+ 
++// clone deeply copies maps and slices so results never alias inputs.
++func clone(v any) any {
++	switch t := v.(type) {
++	case map[string]any:
++		m := make(map[string]any, len(t))
++		for k, e := range t {
++			m[k] = clone(e)
++		}
++		return m
++	case []any:
++		s := make([]any, len(t))
++		for i, e := range t {
++			s[i] = clone(e)
++		}
++		return s
++	}
++	return v
++}
++
+ // Merge returns base with override applied on top.
+ func Merge(base, override map[string]any) map[string]any {
+-	out := base
++	out := make(map[string]any, len(base))
++	for k, v := range base {
++		out[k] = clone(v)
++	}
+ 	for k, v := range override {
+-		out[k] = v
++		if v == nil {
++			delete(out, k)
++			continue
++		}
++		if om, ok := v.(map[string]any); ok {
++			bm, _ := out[k].(map[string]any)
++			out[k] = Merge(bm, om)
++			continue
++		}
++		out[k] = clone(v)
+ 	}
+ 	return out
+ }

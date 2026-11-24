@@ -1,0 +1,36 @@
+--- a/stats.go
++++ b/stats.go
+@@ -3,17 +3,29 @@
+ 
+ import (
+ 	"errors"
++	"math"
+ 	"sort"
+ )
+ 
+-// Percentile returns the p-th percentile of xs.
++// Percentile returns the p-th percentile of xs (p in 0..100), interpolating
++// linearly between the nearest ranks. It does not modify xs.
+ func Percentile(xs []float64, p float64) (float64, error) {
+ 	if len(xs) == 0 {
+ 		return 0, errors.New("no data")
+ 	}
+-	sort.Float64s(xs)
+-	i := int(p / 100 * float64(len(xs)))
+-	return xs[i], nil
++	if math.IsNaN(p) || p < 0 || p > 100 {
++		return 0, errors.New("percentile out of range")
++	}
++	s := append([]float64(nil), xs...)
++	sort.Float64s(s)
++	rank := p / 100 * float64(len(s)-1)
++	lo := int(math.Floor(rank))
++	hi := int(math.Ceil(rank))
++	if hi >= len(s) {
++		hi = len(s) - 1
++	}
++	frac := rank - float64(lo)
++	return s[lo] + frac*(s[hi]-s[lo]), nil
+ }
+ 
+ // Median returns the 50th percentile of xs.

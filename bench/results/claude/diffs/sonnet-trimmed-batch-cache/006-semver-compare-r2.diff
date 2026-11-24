@@ -1,0 +1,100 @@
+--- a/semver.go
++++ b/semver.go
+@@ -6,5 +6,96 @@
+ // Compare returns -1, 0 or 1 as version a is lower than, equal to, or
+ // higher than version b.
+ func Compare(a, b string) int {
+-	return strings.Compare(a, b)
++	coreA, preA := split(a)
++	coreB, preB := split(b)
++
++	pa := strings.Split(coreA, ".")
++	pb := strings.Split(coreB, ".")
++	for i := 0; i < 3; i++ {
++		if c := cmpNum(part(pa, i), part(pb, i)); c != 0 {
++			return c
++		}
++	}
++
++	switch {
++	case preA == "" && preB == "":
++		return 0
++	case preA == "":
++		return 1
++	case preB == "":
++		return -1
++	}
++
++	ia := strings.Split(preA, ".")
++	ib := strings.Split(preB, ".")
++	for i := 0; i < len(ia) && i < len(ib); i++ {
++		x, y := ia[i], ib[i]
++		nx, ny := isNum(x), isNum(y)
++		var c int
++		switch {
++		case nx && ny:
++			c = cmpNum(x, y)
++		case nx:
++			c = -1
++		case ny:
++			c = 1
++		default:
++			c = strings.Compare(x, y)
++		}
++		if c != 0 {
++			return c
++		}
++	}
++	switch {
++	case len(ia) < len(ib):
++		return -1
++	case len(ia) > len(ib):
++		return 1
++	}
++	return 0
+ }
++
++// split strips a leading "v" and build metadata, and separates the
++// pre-release part from the core version.
++func split(v string) (core, pre string) {
++	v = strings.TrimPrefix(v, "v")
++	if i := strings.IndexByte(v, '+'); i >= 0 {
++		v = v[:i]
++	}
++	if i := strings.IndexByte(v, '-'); i >= 0 {
++		return v[:i], v[i+1:]
++	}
++	return v, ""
++}
++
++func part(p []string, i int) string {
++	if i < len(p) {
++		return p[i]
++	}
++	return "0"
++}
++
++func isNum(s string) bool {
++	if s == "" {
++		return false
++	}
++	for i := 0; i < len(s); i++ {
++		if s[i] < '0' || s[i] > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// cmpNum compares two decimal digit strings numerically.
++func cmpNum(x, y string) int {
++	x = strings.TrimLeft(x, "0")
++	y = strings.TrimLeft(y, "0")
++	if len(x) != len(y) {
++		if len(x) < len(y) {
++			return -1
++		}
++		return 1
++	}
++	return strings.Compare(x, y)
++}

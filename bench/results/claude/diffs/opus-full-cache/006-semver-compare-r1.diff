@@ -1,0 +1,99 @@
+--- a/semver.go
++++ b/semver.go
+@@ -6,5 +6,95 @@
+ // Compare returns -1, 0 or 1 as version a is lower than, equal to, or
+ // higher than version b.
+ func Compare(a, b string) int {
+-	return strings.Compare(a, b)
++	aCore, aPre := split(a)
++	bCore, bPre := split(b)
++
++	ac, bc := strings.Split(aCore, "."), strings.Split(bCore, ".")
++	for i := 0; i < len(ac) || i < len(bc); i++ {
++		x, y := "0", "0"
++		if i < len(ac) {
++			x = ac[i]
++		}
++		if i < len(bc) {
++			y = bc[i]
++		}
++		if c := compareNum(x, y); c != 0 {
++			return c
++		}
++	}
++
++	// A version without pre-release ranks above one with it.
++	switch {
++	case aPre == "" && bPre == "":
++		return 0
++	case aPre == "":
++		return 1
++	case bPre == "":
++		return -1
++	}
++
++	ap, bp := strings.Split(aPre, "."), strings.Split(bPre, ".")
++	for i := 0; i < len(ap) && i < len(bp); i++ {
++		x, y := ap[i], bp[i]
++		xn, yn := isNum(x), isNum(y)
++		var c int
++		switch {
++		case xn && yn:
++			c = compareNum(x, y)
++		case xn:
++			c = -1
++		case yn:
++			c = 1
++		default:
++			c = strings.Compare(x, y)
++		}
++		if c != 0 {
++			return c
++		}
++	}
++	switch {
++	case len(ap) < len(bp):
++		return -1
++	case len(ap) > len(bp):
++		return 1
++	}
++	return 0
+ }
++
++// split strips a leading "v" and build metadata, returning the core
++// version and the pre-release part.
++func split(v string) (core, pre string) {
++	v = strings.TrimPrefix(v, "v")
++	if i := strings.IndexByte(v, '+'); i >= 0 {
++		v = v[:i]
++	}
++	if i := strings.IndexByte(v, '-'); i >= 0 {
++		return v[:i], v[i+1:]
++	}
++	return v, ""
++}
++
++func isNum(s string) bool {
++	if s == "" {
++		return false
++	}
++	for _, r := range s {
++		if r < '0' || r > '9' {
++			return false
++		}
++	}
++	return true
++}
++
++// compareNum compares decimal digit strings numerically, without overflow.
++func compareNum(x, y string) int {
++	x = strings.TrimLeft(x, "0")
++	y = strings.TrimLeft(y, "0")
++	if len(x) != len(y) {
++		if len(x) < len(y) {
++			return -1
++		}
++		return 1
++	}
++	return strings.Compare(x, y)
++}

@@ -1,0 +1,40 @@
+--- a/money.go
++++ b/money.go
+@@ -7,19 +7,33 @@
+ )
+ 
+ // Split divides totalCents among n people as evenly as possible.
++// The shares add up to totalCents exactly; the first people pay the extra cents.
+ func Split(totalCents int64, n int) ([]int64, error) {
+ 	if n <= 0 {
+ 		return nil, errors.New("n must be positive")
+ 	}
+-	share := float64(totalCents) / float64(n)
++	if totalCents < 0 {
++		return nil, errors.New("total must not be negative")
++	}
++	share := totalCents / int64(n)
++	rem := totalCents % int64(n)
+ 	out := make([]int64, n)
+ 	for i := range out {
+-		out[i] = int64(share)
++		out[i] = share
++		if int64(i) < rem {
++			out[i]++
++		}
+ 	}
+ 	return out, nil
+ }
+ 
+-// Format renders cents as dollars.
++// Format renders cents as dollars, e.g. "$12.34" or "-$0.05".
+ func Format(cents int64) string {
+-	return fmt.Sprintf("$%.2f", float64(cents)/100)
++	sign := ""
++	abs := uint64(cents)
++	if cents < 0 {
++		sign = "-"
++		abs = -abs // two's complement negation; safe for math.MinInt64
++	}
++	return fmt.Sprintf("%s$%d.%02d", sign, abs/100, abs%100)
+ }

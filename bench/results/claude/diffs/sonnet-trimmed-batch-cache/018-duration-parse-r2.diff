@@ -1,0 +1,92 @@
+--- a/duration.go
++++ b/duration.go
+@@ -2,7 +2,10 @@
+ package duration
+ 
+ import (
++	"errors"
+ 	"fmt"
++	"math"
++	"strconv"
+ 	"time"
+ )
+ 
+@@ -10,22 +13,65 @@
+ 	"d": 24 * time.Hour, "h": time.Hour, "m": time.Minute, "s": time.Second, "ms": time.Millisecond,
+ }
+ 
++func isDigit(c byte) bool { return c >= '0' && c <= '9' }
++
++func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
++
+ // Parse reads a duration like "1h30m" or "2d".
+ func Parse(s string) (time.Duration, error) {
+-	var total time.Duration
+-	num := 0
+-	for _, r := range s {
+-		switch {
+-		case r >= '0' && r <= '9':
+-			num = num*10 + int(r-'0')
+-		default:
+-			u, ok := units[string(r)]
+-			if !ok {
+-				return 0, fmt.Errorf("unknown unit %q", r)
++	var total float64
++	i, n := 0, len(s)
++	parts := 0
++	for {
++		for i < n && isSpace(s[i]) {
++			i++
++		}
++		if i >= n {
++			break
++		}
++		start := i
++		for i < n && isDigit(s[i]) {
++			i++
++		}
++		intDigits := i - start
++		fracDigits := 0
++		if i < n && s[i] == '.' {
++			i++
++			fs := i
++			for i < n && isDigit(s[i]) {
++				i++
+ 			}
+-			total += time.Duration(num) * u
+-			num = 0
++			fracDigits = i - fs
+ 		}
++		if intDigits == 0 && fracDigits == 0 {
++			if i < n {
++				return 0, fmt.Errorf("unit %q without a number", s[start:])
++			}
++			return 0, errors.New("invalid number")
++		}
++		num, err := strconv.ParseFloat(s[start:i], 64)
++		if err != nil {
++			return 0, err
++		}
++		us := i
++		for i < n && !isDigit(s[i]) && s[i] != '.' && !isSpace(s[i]) {
++			i++
++		}
++		if us == i {
++			return 0, fmt.Errorf("number %q without a unit", s[start:i])
++		}
++		u, ok := units[s[us:i]]
++		if !ok {
++			return 0, fmt.Errorf("unknown unit %q", s[us:i])
++		}
++		total += num * float64(u)
++		parts++
+ 	}
+-	return total, nil
++	if parts == 0 {
++		return 0, errors.New("empty duration")
++	}
++	if total > math.MaxInt64 {
++		return 0, errors.New("duration overflow")
++	}
++	return time.Duration(math.Round(total)), nil
+ }

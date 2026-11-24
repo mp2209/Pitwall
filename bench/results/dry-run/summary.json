@@ -1,0 +1,272 @@
+{
+  "plans": [
+    "dry-run"
+  ],
+  "configs": [
+    {
+      "config": "mock-full-nocache",
+      "model": "mock-claude",
+      "cache_optimizer": false,
+      "keep_tool_results": 0,
+      "trim_batch": 1,
+      "runs": 40,
+      "solved": 27,
+      "solve_rate": 0.675,
+      "solve_rate_ci": [
+        0.52017458088898,
+        0.7991568303733828
+      ],
+      "stopped_by_guard": 4,
+      "warned_not_stopped": 0,
+      "calls_before_stop": 7.25,
+      "cost_of_stopped_usd": 0.068619,
+      "tests_modified": 2,
+      "errors": 0,
+      "cost_usd": 1.704084,
+      "cost_per_run_usd": 0.0426021,
+      "cost_per_solved_usd": 0.06311422222222222,
+      "cost_per_solved_ci": [
+        0.053014241379310344,
+        0.07701456000000001
+      ],
+      "tokens_per_solved": 19202.37037037037,
+      "tokens_per_solved_ci": [
+        16149.7,
+        23427.17391304348
+      ],
+      "per_solved_split": {
+        "input": 18743.444444444445,
+        "cache_read": 0.0,
+        "cache_write": 0.0,
+        "output": 458.9259259259259
+      },
+      "cache_read_share": 0.0,
+      "repeated_share": 0.8342096891159971,
+      "mean_turns_solved": 9.148148148148149,
+      "median_seconds": 0.855,
+      "median_seconds_solved": 0.87,
+      "max_context_tokens": 6110.0
+    },
+    {
+      "config": "mock-full-cache",
+      "model": "mock-claude",
+      "cache_optimizer": true,
+      "keep_tool_results": 0,
+      "trim_batch": 1,
+      "runs": 40,
+      "solved": 27,
+      "solve_rate": 0.675,
+      "solve_rate_ci": [
+        0.52017458088898,
+        0.7991568303733828
+      ],
+      "stopped_by_guard": 4,
+      "warned_not_stopped": 0,
+      "calls_before_stop": 7.25,
+      "cost_of_stopped_usd": 0.04335,
+      "tests_modified": 2,
+      "errors": 0,
+      "cost_usd": 0.7992741,
+      "cost_per_run_usd": 0.0199818525,
+      "cost_per_solved_usd": 0.029602744444444443,
+      "cost_per_solved_ci": [
+        0.025075645161290322,
+        0.035690877272727274
+      ],
+      "tokens_per_solved": 19195.925925925927,
+      "tokens_per_solved_ci": [
+        16149.166666666666,
+        23412.521739130436
+      ],
+      "per_solved_split": {
+        "input": 2534.0,
+        "cache_read": 13230.25925925926,
+        "cache_write": 2972.740740740741,
+        "output": 458.9259259259259
+      },
+      "cache_read_share": 0.7061033921790714,
+      "repeated_share": 0.8342475474353577,
+      "mean_turns_solved": 9.148148148148149,
+      "median_seconds": 0.865,
+      "median_seconds_solved": 0.88,
+      "max_context_tokens": 6110.0
+    },
+    {
+      "config": "mock-trimmed-cache",
+      "model": "mock-claude",
+      "cache_optimizer": true,
+      "keep_tool_results": 2,
+      "trim_batch": 1,
+      "runs": 40,
+      "solved": 27,
+      "solve_rate": 0.675,
+      "solve_rate_ci": [
+        0.52017458088898,
+        0.7991568303733828
+      ],
+      "stopped_by_guard": 4,
+      "warned_not_stopped": 0,
+      "calls_before_stop": 11.0,
+      "cost_of_stopped_usd": 0.09227099999999999,
+      "tests_modified": 2,
+      "errors": 0,
+      "cost_usd": 1.21010415,
+      "cost_per_run_usd": 0.030252603750000003,
+      "cost_per_solved_usd": 0.044818672222222224,
+      "cost_per_solved_ci": [
+        0.03855122068965517,
+        0.05292366428571429
+      ],
+      "tokens_per_solved": 16638.85185185185,
+      "tokens_per_solved_ci": [
+        14165.3,
+        20003.923076923078
+      ],
+      "per_solved_split": {
+        "input": 3189.074074074074,
+        "cache_read": 5903.444444444444,
+        "cache_write": 7085.740740740741,
+        "output": 460.5925925925926
+      },
+      "cache_read_share": 0.3648998541710068,
+      "repeated_share": 0.7112952224407241,
+      "mean_turns_solved": 9.148148148148149,
+      "median_seconds": 0.865,
+      "median_seconds_solved": 0.88,
+      "max_context_tokens": 4350.0
+    },
+    {
+      "config": "mock-trimmed-batch-cache",
+      "model": "mock-claude",
+      "cache_optimizer": true,
+      "keep_tool_results": 2,
+      "trim_batch": 4,
+      "runs": 40,
+      "solved": 27,
+      "solve_rate": 0.675,
+      "solve_rate_ci": [
+        0.52017458088898,
+        0.7991568303733828
+      ],
+      "stopped_by_guard": 4,
+      "warned_not_stopped": 0,
+      "calls_before_stop": 7.25,
+      "cost_of_stopped_usd": 0.0451959,
+      "tests_modified": 2,
+      "errors": 0,
+      "cost_usd": 0.86727285,
+      "cost_per_run_usd": 0.02168182125,
+      "cost_per_solved_usd": 0.03212121666666667,
+      "cost_per_solved_ci": [
+        0.02731925322580645,
+        0.03860039318181818
+      ],
+      "tokens_per_solved": 17321.14814814815,
+      "tokens_per_solved_ci": [
+        14602.676470588236,
+        21033.04
+      ],
+      "per_solved_split": {
+        "input": 2535.6296296296296,
+        "cache_read": 10462.111111111111,
+        "cache_write": 3864.4814814814813,
+        "output": 458.9259259259259
+      },
+      "cache_read_share": 0.620446758039009,
+      "repeated_share": 0.7866565629942014,
+      "mean_turns_solved": 9.148148148148149,
+      "median_seconds": 0.855,
+      "median_seconds_solved": 0.87,
+      "max_context_tokens": 5101.0
+    },
+    {
+      "config": "mock-openai-format",
+      "model": "mock-gpt",
+      "cache_optimizer": false,
+      "keep_tool_results": 0,
+      "trim_batch": 1,
+      "runs": 40,
+      "solved": 27,
+      "solve_rate": 0.675,
+      "solve_rate_ci": [
+        0.52017458088898,
+        0.7991568303733828
+      ],
+      "stopped_by_guard": 4,
+      "warned_not_stopped": 0,
+      "calls_before_stop": 7.25,
+      "cost_of_stopped_usd": 0.027584,
+      "tests_modified": 2,
+      "errors": 0,
+      "cost_usd": 0.536138,
+      "cost_per_run_usd": 0.01340345,
+      "cost_per_solved_usd": 0.01985696296296296,
+      "cost_per_solved_ci": [
+        0.01705767741935484,
+        0.023751478260869565
+      ],
+      "tokens_per_solved": 15854.814814814816,
+      "tokens_per_solved_ci": [
+        13219.32142857143,
+        19424.739130434784
+      ],
+      "per_solved_split": {
+        "input": 5658.407407407408,
+        "cache_read": 9737.481481481482,
+        "cache_write": 0.0,
+        "output": 458.9259259259259
+      },
+      "cache_read_share": 0.6324728342583037,
+      "repeated_share": 0.8207457979402871,
+      "mean_turns_solved": 9.148148148148149,
+      "median_seconds": 0.85,
+      "median_seconds_solved": 0.88,
+      "max_context_tokens": 4227.0
+    }
+  ],
+  "paired": [
+    {
+      "config": "mock-full-cache",
+      "baseline": "mock-full-nocache",
+      "pairs": 40,
+      "cost_change": -0.530965550993965,
+      "cheaper_runs": 35,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    },
+    {
+      "config": "mock-trimmed-cache",
+      "baseline": "mock-full-nocache",
+      "pairs": 40,
+      "cost_change": -0.2898799883104354,
+      "cheaper_runs": 35,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    },
+    {
+      "config": "mock-trimmed-batch-cache",
+      "baseline": "mock-full-nocache",
+      "pairs": 40,
+      "cost_change": -0.4910621483447999,
+      "cheaper_runs": 35,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    },
+    {
+      "config": "mock-openai-format",
+      "baseline": "mock-full-nocache",
+      "pairs": 40,
+      "cost_change": -0.6853805328845292,
+      "cheaper_runs": 40,
+      "solved_only_here": 0,
+      "solved_only_baseline": 0
+    }
+  ],
+  "task_inference": {
+    "runs_checked": 200,
+    "grouped_correctly": 200,
+    "split": 0,
+    "merged": 0,
+    "accuracy": 1.0
+  }
+}

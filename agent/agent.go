@@ -39,9 +39,17 @@ type Config struct {
 	// results to a short marker before each call (the "old tool outputs
 	// trimmed" context strategy). Zero keeps the full history.
 	KeepToolResults int
-	Task            string // x-pitwall-task label
-	ConfigLabel     string // x-pitwall-config label
-	TestTimeout     time.Duration
+	// TrimBatch moves the trim point in steps of this many results instead
+	// of one, so up to TrimBatch-1 extra results stay untrimmed. Moving it
+	// every turn changes an older message on every call, which invalidates
+	// the previous call's prompt-cache entry: only the tools and system
+	// prompt are read back. Moving it in batches leaves the history
+	// unchanged between steps, so those calls read the cache. 0 or 1 trims
+	// every turn.
+	TrimBatch   int
+	Task        string // x-pitwall-task label
+	ConfigLabel string // x-pitwall-config label
+	TestTimeout time.Duration
 }
 
 // Result summarizes a run.
@@ -115,7 +123,7 @@ func Run(ctx context.Context, cfg Config) Result {
 			Model:     cfg.Model,
 			MaxTokens: cfg.MaxTokens,
 			System:    []anthropic.TextBlockParam{{Text: systemPrompt}},
-			Messages:  render(cfg.Prompt, turns, cfg.KeepToolResults),
+			Messages:  render(cfg.Prompt, turns, cfg.KeepToolResults, cfg.TrimBatch),
 			Tools:     tools,
 		})
 		if err != nil {
@@ -157,12 +165,20 @@ func Run(ctx context.Context, cfg Config) Result {
 	return res
 }
 
-// render builds the message list, trimming old tool results if asked.
-func render(prompt string, turns []turn, keep int) []anthropic.MessageParam {
+// render builds the message list, trimming old tool results if asked: the
+// first cutoff results (counting all of them) are candidates for trimming.
+func render(prompt string, turns []turn, keep, batch int) []anthropic.MessageParam {
 	msgs := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(prompt))}
 	total := 0
 	for _, t := range turns {
 		total += len(t.results)
+	}
+	cutoff := 0
+	if keep > 0 && total > keep {
+		cutoff = total - keep
+		if batch > 1 {
+			cutoff -= cutoff % batch
+		}
 	}
 	seen := 0
 	for _, t := range turns {
@@ -174,7 +190,7 @@ func render(prompt string, turns []turn, keep int) []anthropic.MessageParam {
 		for _, r := range t.results {
 			seen++
 			content := r.content
-			if keep > 0 && total-seen >= keep && len(content) > 200 {
+			if seen <= cutoff && len(content) > 200 {
 				content = fmt.Sprintf("[older tool output trimmed: %d bytes]", len(r.content))
 			}
 			blocks = append(blocks, anthropic.NewToolResultBlock(r.id, content, r.isError))

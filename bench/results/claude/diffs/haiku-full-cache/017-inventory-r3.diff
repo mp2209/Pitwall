@@ -1,0 +1,36 @@
+--- a/order.go
++++ b/order.go
+@@ -47,8 +47,11 @@
+ 	if _, ok := s.orders[id]; ok {
+ 		return fmt.Errorf("order %s already exists", id)
+ 	}
+-	for _, l := range lines {
++	for i, l := range lines {
+ 		if err := s.stock.Reserve(l.SKU, l.Qty); err != nil {
++			for _, done := range lines[:i] {
++				s.stock.Release(done.SKU, done.Qty)
++			}
+ 			return err
+ 		}
+ 	}
+@@ -64,6 +67,9 @@
+ 	}
+ 	if o.Status != Placed {
+ 		return ErrNotPlaced
++	}
++	for _, l := range o.Lines {
++		s.stock.Release(l.SKU, l.Qty)
+ 	}
+ 	o.Status = Cancelled
+ 	return nil
+--- a/stock.go
++++ b/stock.go
+@@ -25,7 +25,7 @@
+ 	if qty <= 0 {
+ 		return fmt.Errorf("bad quantity %d", qty)
+ 	}
+-	if s.onHand[sku] < qty {
++	if s.Available(sku) < qty {
+ 		return fmt.Errorf("%s: only %d available", sku, s.Available(sku))
+ 	}
+ 	s.reserved[sku] += qty

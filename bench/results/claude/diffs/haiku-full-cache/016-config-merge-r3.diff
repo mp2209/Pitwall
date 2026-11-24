@@ -1,0 +1,52 @@
+--- a/merge.go
++++ b/merge.go
+@@ -1,11 +1,46 @@
+ // Package config merges layered configuration.
+ package config
+ 
+-// Merge returns base with override applied on top.
++// Merge returns base with override applied on top. Nested maps merge key by
++// key, any other value from override (slices included) replaces the base
++// value, and a nil value in override deletes the key. The result shares no
++// mutable state with either input.
+ func Merge(base, override map[string]any) map[string]any {
+-	out := base
++	out := make(map[string]any, len(base)+len(override))
++	for k, v := range base {
++		out[k] = clone(v)
++	}
+ 	for k, v := range override {
+-		out[k] = v
++		if v == nil {
++			delete(out, k)
++			continue
++		}
++		if om, ok := v.(map[string]any); ok {
++			bm, _ := out[k].(map[string]any)
++			out[k] = Merge(bm, om)
++			continue
++		}
++		out[k] = clone(v)
+ 	}
+ 	return out
+ }
++
++// clone deep-copies maps and slices so the result never aliases an input.
++func clone(v any) any {
++	switch t := v.(type) {
++	case map[string]any:
++		m := make(map[string]any, len(t))
++		for k, x := range t {
++			m[k] = clone(x)
++		}
++		return m
++	case []any:
++		s := make([]any, len(t))
++		for i, x := range t {
++			s[i] = clone(x)
++		}
++		return s
++	default:
++		return v
++	}
++}

@@ -1,0 +1,84 @@
+--- a/duration.go
++++ b/duration.go
+@@ -3,6 +3,8 @@
+ 
+ import (
+ 	"fmt"
++	"strconv"
++	"strings"
+ 	"time"
+ )
+ 
+@@ -10,22 +12,58 @@
+ 	"d": 24 * time.Hour, "h": time.Hour, "m": time.Minute, "s": time.Second, "ms": time.Millisecond,
+ }
+ 
+-// Parse reads a duration like "1h30m" or "2d".
++func isDigit(c byte) bool { return c >= '0' && c <= '9' }
++
++func isLetter(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
++
++// Parse reads a duration like "1h30m", "1h 30m", "1.5h" or "2d".
+ func Parse(s string) (time.Duration, error) {
+-	var total time.Duration
+-	num := 0
+-	for _, r := range s {
+-		switch {
+-		case r >= '0' && r <= '9':
+-			num = num*10 + int(r-'0')
+-		default:
+-			u, ok := units[string(r)]
+-			if !ok {
+-				return 0, fmt.Errorf("unknown unit %q", r)
++	s = strings.TrimSpace(s)
++	if s == "" {
++		return 0, fmt.Errorf("empty duration")
++	}
++	var total float64
++	i := 0
++	for i < len(s) {
++		// number
++		start := i
++		for i < len(s) && isDigit(s[i]) {
++			i++
++		}
++		if i == start {
++			return 0, fmt.Errorf("expected number at %q", s[start:])
++		}
++		if i < len(s) && s[i] == '.' {
++			i++
++			fs := i
++			for i < len(s) && isDigit(s[i]) {
++				i++
+ 			}
+-			total += time.Duration(num) * u
+-			num = 0
++			if i == fs {
++				return 0, fmt.Errorf("invalid number %q", s[start:i])
++			}
++		}
++		num, err := strconv.ParseFloat(s[start:i], 64)
++		if err != nil {
++			return 0, fmt.Errorf("invalid number %q: %v", s[start:i], err)
++		}
++		// unit
++		us := i
++		for i < len(s) && isLetter(s[i]) {
++			i++
++		}
++		if i == us {
++			return 0, fmt.Errorf("missing unit after %q", s[start:i])
++		}
++		u, ok := units[s[us:i]]
++		if !ok {
++			return 0, fmt.Errorf("unknown unit %q", s[us:i])
++		}
++		total += num * float64(u)
++		// optional separator
++		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
++			i++
+ 		}
+ 	}
+-	return total, nil
++	return time.Duration(total + 0.5), nil
+ }

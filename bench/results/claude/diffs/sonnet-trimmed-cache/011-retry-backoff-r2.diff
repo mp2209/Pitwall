@@ -1,0 +1,28 @@
+--- a/backoff.go
++++ b/backoff.go
+@@ -4,6 +4,24 @@
+ import "time"
+ 
+ // Delay returns how long to wait before retry number attempt.
++// The base delay doubles per attempt, capped at max. A negative attempt is
++// treated as 0.
+ func Delay(attempt int, base, max time.Duration) time.Duration {
+-	return base * time.Duration(1<<attempt)
++	if base >= max {
++		return max
++	}
++	if base <= 0 {
++		return base
++	}
++	d := base
++	for i := 0; i < attempt; i++ {
++		if d > max/2 {
++			return max
++		}
++		d *= 2
++	}
++	if d > max {
++		return max
++	}
++	return d
+ }

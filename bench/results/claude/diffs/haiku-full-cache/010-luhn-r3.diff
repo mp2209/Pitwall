@@ -1,0 +1,31 @@
+--- a/luhn.go
++++ b/luhn.go
+@@ -4,15 +4,24 @@
+ // Valid reports whether number passes the Luhn checksum.
+ func Valid(number string) bool {
+ 	sum := 0
+-	for i, r := range number {
+-		d := int(r - '0')
+-		if i%2 == 1 {
++	count := 0
++	for i := len(number) - 1; i >= 0; i-- {
++		c := number[i]
++		if c == ' ' {
++			continue
++		}
++		if c < '0' || c > '9' {
++			return false
++		}
++		d := int(c - '0')
++		if count%2 == 1 {
+ 			d *= 2
+ 			if d > 9 {
+ 				d -= 9
+ 			}
+ 		}
+ 		sum += d
++		count++
+ 	}
+-	return sum%10 == 0
++	return count > 1 && sum%10 == 0
+ }

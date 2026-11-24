@@ -5,12 +5,39 @@ model call into the task it belongs to, and answers the question a
 per-request bill can't: **what does it cost to finish a task, and which model
 and harness setup does it cheapest?**
 
-> **Status: Phases 0–4 of 6 complete.** The proxy speaks both API formats,
+> **Status: Phases 0–5 of 6 complete.** The proxy speaks both API formats,
 > every call carries a virtual key, a cost row and a budget check, calls are
 > grouped into agent tasks, the gateway adds prompt-cache breakpoints for
-> clients that don't, and a guard stops agents stuck in a loop. The harness
-> benchmark is next (see [Roadmap](#roadmap)). Findings will lead this
-> README once the benchmark has results.
+> clients that don't, a guard stops agents stuck in a loop, and a harness
+> benchmark measures cost per solved task across models and agent setups.
+> The write-up is next (see [Roadmap](#roadmap)).
+
+## Findings
+
+From the harness benchmark: 20 coding tasks, 6 configurations, 3 repeats,
+360 runs of Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5 through Pitwall, for
+$4.98 in total ([results](bench/results/claude/results.md),
+[findings](bench/results/findings.md)).
+
+- **Every configuration solved every task**, so on these tasks the models
+  differ only in cost. Separating them on ability needs harder tasks.
+- **The cheapest capable model wins by an order of magnitude**: $0.0009 per
+  solved task on Haiku, $0.0128 on Sonnet, $0.0253 on Opus, all with
+  caching. Haiku used more calls and tokens and was still 14 times cheaper
+  than Sonnet.
+- **Prompt caching cut Sonnet's cost per task by 31%** (paired by task, cheaper
+  on 59 of 60), on tasks of only three or four calls.
+- **Trimming old tool output broke the conversation**: Sonnet's signed
+  thinking blocks are bound to the history before them, so editing an
+  earlier tool result made the API refuse the next call in 27 of 60 runs.
+  On the mock, trimming every turn also cost 51% more than keeping the
+  history, because each trim invalidates the prompt cache.
+- **The guard and task grouping held up**: no warnings or stops on 360
+  normal runs, and inference grouped every run into exactly one task. On
+  the mock the guard stopped all 20 seeded loops, 8 of them only at the
+  11th call instead of the 6th.
+
+![Cost per solved task](bench/results/claude/charts/cost_per_solved.svg)
 
 ## What works today
 
@@ -86,6 +113,26 @@ and harness setup does it cheapest?**
   the 4th, and none of 20 normal runs; a caught loop cost $0.008 instead of
   $0.21 for the same loop left to run 30 calls. These check the mechanisms on
   a scripted agent; real-model numbers come from the benchmark.
+
+**Harness benchmark** ([how it works](bench/README.md), [design note](docs/decisions/0005-harness-benchmark.md), [findings](bench/results/findings.md))
+
+- **20 coding tasks** (small Go repos with failing tests; reference fixes
+  kept outside the agent's reach and checked in CI), run under any number of
+  configurations and repeats through the gateway, with a spend cap the
+  gateway enforces.
+- **Outcomes the runner verifies** with the original tests restored, so an
+  agent that edits the tests to pass gets no credit; the report gives cost
+  and tokens per solved task with confidence intervals, paired comparisons,
+  guard stops and task-inference accuracy, plus SVG charts.
+- **Dry run on the mock** ([results](bench/results/dry-run/results.md)),
+  with scripted outcomes so only the configuration differs: cache
+  breakpoints cut cost 53% on 9-turn tasks; trimming old tool output every
+  turn cost 51% more than full history because it defeats the cache, and
+  trimming in batches won most of that back; the guard stopped all 20
+  seeded loops, but 8 only at the 11th call (trimmed history and
+  nondeterministic test output hide the repetition).
+- **Real models** ([results](bench/results/claude/results.md)): see
+  [Findings](#findings) above.
 
 **Tested against real clients**: the official OpenAI and Anthropic Python
 SDKs (in CI) and Claude Code, on both same-format and cross-format routes,
@@ -187,7 +234,18 @@ PITWALL_KEY=... bin/agent -model claude-sonnet-5-5 -dir /tmp/wc -config sonnet/f
 It sends `x-pitwall-task`, runs the task's tests when it stops, reports the
 outcome, and prints a JSON summary. `-keep-tool-results N` trims all but the
 newest N tool outputs, the "old tool output trimmed" context strategy the
-benchmark compares.
+benchmark compares; `-trim-batch K` moves the trim point K results at a time
+so the cached prefix stays stable in between.
+
+### The benchmark
+
+```bash
+python3 bench/run.py --plan bench/plans/dry-run.json --out bench/results/dry-run --jobs 4
+python3 bench/analyze.py bench/results/dry-run
+```
+
+See [bench/README.md](bench/README.md) for tasks, plans, real-model runs and
+the report.
 
 ## Admin API
 
@@ -258,6 +316,7 @@ metrics on their own port.
 make test       # go test -race ./...
 make lint       # golangci-lint
 make smoke      # official SDKs against a running gateway + mock
+make bench-check  # every benchmark task fails as shipped and passes with its fix
 ```
 
 Store, budget and full-stack tests need Postgres and Redis and are skipped
@@ -292,6 +351,9 @@ internal/sse/         server-sent event reader and writer
 internal/config/      YAML config and price file
 mockprovider/         fake OpenAI + Anthropic server
 bench/tasks/          benchmark tasks: tiny repos with failing tests
+bench/solutions/      reference fixes, kept out of the agent's reach
+bench/plans/          benchmark plans: configurations, repeats, budget
+bench/run.py          benchmark runner; analyze.py turns runs into a report
 bench/experiments/    measurement scripts
 bench/results/        measured results
 config/               gateway config and price table
@@ -309,5 +371,5 @@ scripts/              SDK smoke test
 | 2 | Postgres schema, virtual keys, cost from a price table, async request log, reserve-then-settle budgets in Redis | done |
 | 3 | Task traces: `x-pitwall-task` header, inferred tasks, Langfuse, Grafana task panel | done |
 | 4 | Automatic prompt-cache breakpoints (switchable per key); runaway-agent guard | done |
-| 5 | Harness benchmark: ~20 coding tasks × configurations × 3 repeats | next |
+| 5 | Harness benchmark: ~20 coding tasks × configurations × 3 repeats | done |
 | 6 | Write-up: findings, blog post, demo | |

@@ -1,0 +1,43 @@
+--- a/brackets.go
++++ b/brackets.go
+@@ -2,15 +2,36 @@
+ package brackets
+ 
+ // Balanced reports whether the brackets in s are balanced and nested.
++// Brackets inside double-quoted strings are ignored; a backslash inside a
++// string escapes the next character.
+ func Balanced(s string) bool {
+-	depth := 0
++	var stack []rune
++	inString := false
++	escaped := false
+ 	for _, r := range s {
++		if inString {
++			switch {
++			case escaped:
++				escaped = false
++			case r == '\\':
++				escaped = true
++			case r == '"':
++				inString = false
++			}
++			continue
++		}
+ 		switch r {
++		case '"':
++			inString = true
+ 		case '(', '[', '{':
+-			depth++
++			stack = append(stack, r)
+ 		case ')', ']', '}':
+-			depth--
++			want := map[rune]rune{')': '(', ']': '[', '}': '{'}[r]
++			if len(stack) == 0 || stack[len(stack)-1] != want {
++				return false
++			}
++			stack = stack[:len(stack)-1]
+ 		}
+ 	}
+-	return depth == 0
++	return len(stack) == 0
+ }

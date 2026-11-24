@@ -2,6 +2,7 @@ package mockprovider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -179,5 +180,36 @@ func TestTurnsModeCyclesToolsThenAnswers(t *testing.T) {
 	}
 	if got := strings.Join(names, ","); got != "a,b,a,text" {
 		t.Errorf("turn sequence = %s, want a,b,a,text", got)
+	}
+}
+
+func TestScriptPlaysToolCallsThenAnswers(t *testing.T) {
+	ts := httptest.NewServer(New(Config{}).Handler())
+	defer ts.Close()
+	script := base64.RawURLEncoding.EncodeToString([]byte(
+		`[{"name":"read_file","input":{"path":"a.go"}},{"name":"write_file","input":{"path":"a.go","content":"package a\n"}},{"name":"run_tests"}]`))
+	tools := `"tools":[{"name":"run_tests","input_schema":{"type":"object"}},{"name":"read_file","input_schema":{"type":"object"}}]`
+	msgs := `{"role":"user","content":"[[mock:script=` + script + `]] go"}`
+	var got []string
+	for range 5 {
+		v := call(t, ts.URL+"/v1/messages", `{"model":"m","max_tokens":10,`+tools+`,"messages":[`+msgs+`]}`)
+		block := v["content"].([]any)[0].(map[string]any)
+		if block["type"] != "tool_use" {
+			got = append(got, "text")
+			break
+		}
+		input, _ := json.Marshal(block["input"])
+		got = append(got, block["name"].(string)+string(input))
+		msgs += fmt.Sprintf(`,{"role":"assistant","content":[{"type":"tool_use","id":%q,"name":%q,"input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":%q,"content":"ok"}]}`,
+			block["id"], block["name"], block["id"])
+	}
+	want := `read_file{"path":"a.go"},write_file{"content":"package a\n","path":"a.go"},run_tests{},text`
+	if strings.Join(got, ",") != want {
+		t.Errorf("script replay = %s\nwant %s", strings.Join(got, ","), want)
+	}
+	// A broken script is ignored: auto mode as usual.
+	v := call(t, ts.URL+"/v1/messages", `{"model":"m","max_tokens":10,`+tools+`,"messages":[{"role":"user","content":"[[mock:script=!!]] go"}]}`)
+	if v["content"].([]any)[0].(map[string]any)["name"] != "run_tests" {
+		t.Errorf("a bad script should fall back to auto mode: %v", v["content"])
 	}
 }

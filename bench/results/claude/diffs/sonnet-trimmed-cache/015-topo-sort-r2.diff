@@ -1,0 +1,43 @@
+--- a/topo.go
++++ b/topo.go
+@@ -1,14 +1,22 @@
+ // Package topo orders items by their dependencies.
+ package topo
+ 
++import (
++	"errors"
++	"sort"
++)
++
+ // Order returns the items of deps so that each comes after its
+-// dependencies.
++// dependencies. Among ready items the alphabetically first is taken.
+ func Order(deps map[string][]string) ([]string, error) {
+ 	indegree := map[string]int{}
+ 	users := map[string][]string{}
+ 	for item, ds := range deps {
+ 		indegree[item] += len(ds)
+ 		for _, d := range ds {
++			if _, ok := indegree[d]; !ok {
++				indegree[d] = 0
++			}
+ 			users[d] = append(users[d], item)
+ 		}
+ 	}
+@@ -20,6 +28,7 @@
+ 	}
+ 	var out []string
+ 	for len(ready) > 0 {
++		sort.Strings(ready)
+ 		item := ready[0]
+ 		ready = ready[1:]
+ 		out = append(out, item)
+@@ -30,5 +39,8 @@
+ 			}
+ 		}
+ 	}
++	if len(out) != len(indegree) {
++		return nil, errors.New("dependency cycle detected")
++	}
+ 	return out, nil
+ }

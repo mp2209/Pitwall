@@ -1,0 +1,52 @@
+--- a/csvline.go
++++ b/csvline.go
+@@ -1,9 +1,47 @@
+ // Package csvline parses single CSV records.
+ package csvline
+ 
+-import "strings"
++import (
++	"errors"
++	"strings"
++)
++
++// ErrUnterminatedQuote is returned when a quoted field is not closed.
++var ErrUnterminatedQuote = errors.New("csvline: unterminated quote")
+ 
+ // ParseLine splits one CSV record into fields.
+ func ParseLine(line string) ([]string, error) {
+-	return strings.Split(line, ","), nil
++	var fields []string
++	var sb strings.Builder
++	inQuotes := false
++	for i := 0; i < len(line); i++ {
++		ch := line[i]
++		if inQuotes {
++			if ch == '"' {
++				if i+1 < len(line) && line[i+1] == '"' {
++					sb.WriteByte('"')
++					i++
++				} else {
++					inQuotes = false
++				}
++			} else {
++				sb.WriteByte(ch)
++			}
++			continue
++		}
++		switch ch {
++		case '"':
++			inQuotes = true
++		case ',':
++			fields = append(fields, sb.String())
++			sb.Reset()
++		default:
++			sb.WriteByte(ch)
++		}
++	}
++	if inQuotes {
++		return nil, ErrUnterminatedQuote
++	}
++	fields = append(fields, sb.String())
++	return fields, nil
+ }

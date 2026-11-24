@@ -1,0 +1,11 @@
+--- a/search.go
++++ b/search.go
+@@ -4,7 +4,7 @@
+ // Index returns the position of target in the sorted slice xs, or -1.
+ func Index(xs []int, target int) int {
+ 	lo, hi := 0, len(xs)-1
+-	for lo < hi {
++	for lo <= hi {
+ 		mid := (lo + hi) / 2
+ 		switch {
+ 		case xs[mid] == target:

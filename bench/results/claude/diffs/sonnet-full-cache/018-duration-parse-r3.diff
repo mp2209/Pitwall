@@ -1,0 +1,98 @@
+--- a/duration.go
++++ b/duration.go
+@@ -2,7 +2,9 @@
+ package duration
+ 
+ import (
++	"errors"
+ 	"fmt"
++	"math"
+ 	"time"
+ )
+ 
+@@ -10,22 +12,73 @@
+ 	"d": 24 * time.Hour, "h": time.Hour, "m": time.Minute, "s": time.Second, "ms": time.Millisecond,
+ }
+ 
+-// Parse reads a duration like "1h30m" or "2d".
++func isDigit(c byte) bool { return c >= '0' && c <= '9' }
++
++// Parse reads a duration like "1h30m", "1.5h" or "2d".
++// A duration is one or more number-and-unit parts, optionally separated by spaces.
+ func Parse(s string) (time.Duration, error) {
+ 	var total time.Duration
+-	num := 0
+-	for _, r := range s {
+-		switch {
+-		case r >= '0' && r <= '9':
+-			num = num*10 + int(r-'0')
+-		default:
+-			u, ok := units[string(r)]
+-			if !ok {
+-				return 0, fmt.Errorf("unknown unit %q", r)
++	parts := 0
++	i := 0
++	for {
++		for i < len(s) && s[i] == ' ' {
++			i++
++		}
++		if i >= len(s) {
++			break
++		}
++
++		// Number: digits with an optional decimal part.
++		start := i
++		var whole int64
++		for i < len(s) && isDigit(s[i]) {
++			d := int64(s[i] - '0')
++			if whole > (math.MaxInt64-d)/10 {
++				return 0, errors.New("duration overflow")
+ 			}
+-			total += time.Duration(num) * u
+-			num = 0
++			whole = whole*10 + d
++			i++
+ 		}
++		if i == start {
++			return 0, fmt.Errorf("missing number at %q", s[start:])
++		}
++		frac := 0.0
++		if i < len(s) && s[i] == '.' {
++			i++
++			scale := 0.1
++			fstart := i
++			for i < len(s) && isDigit(s[i]) {
++				frac += float64(s[i]-'0') * scale
++				scale /= 10
++				i++
++			}
++			if i == fstart {
++				return 0, fmt.Errorf("invalid number %q", s[start:i])
++			}
++		}
++
++		// Unit: letters.
++		ustart := i
++		for i < len(s) && s[i] >= 'a' && s[i] <= 'z' {
++			i++
++		}
++		if i == ustart {
++			return 0, fmt.Errorf("missing unit after %q", s[start:i])
++		}
++		u, ok := units[s[ustart:i]]
++		if !ok {
++			return 0, fmt.Errorf("unknown unit %q", s[ustart:i])
++		}
++
++		if whole > int64((time.Duration(math.MaxInt64)-total)/u) {
++			return 0, errors.New("duration overflow")
++		}
++		total += time.Duration(whole) * u
++		total += time.Duration(math.Round(frac * float64(u)))
++		parts++
++	}
++	if parts == 0 {
++		return 0, errors.New("empty duration")
+ 	}
+ 	return total, nil
+ }

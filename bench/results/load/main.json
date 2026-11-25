@@ -1,0 +1,210 @@
+{
+  "delay_ms": 50,
+  "duration": "30s",
+  "runs": [
+    {
+      "target": "http://127.0.0.1:9300",
+      "rate": 100,
+      "stream": false,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 50.65975008330549,
+        "p50": 50.583,
+        "p90": 51.02,
+        "p95": 51.214,
+        "p99": 51.685,
+        "max": 56.167
+      },
+      "name": "direct"
+    },
+    {
+      "target": "http://127.0.0.1:8380",
+      "rate": 100,
+      "stream": false,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 51.23375108297233,
+        "p50": 51.173,
+        "p90": 51.724,
+        "p95": 51.961,
+        "p99": 52.747,
+        "max": 58.129
+      },
+      "name": "pitwall-dev"
+    },
+    {
+      "target": "http://127.0.0.1:8381",
+      "rate": 100,
+      "stream": false,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 52.45547517494171,
+        "p50": 52.247,
+        "p90": 53.169,
+        "p95": 53.718,
+        "p99": 56.828,
+        "max": 83.019
+      },
+      "name": "pitwall-full"
+    },
+    {
+      "target": "http://127.0.0.1:4000",
+      "rate": 100,
+      "stream": false,
+      "requests": 3000,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 57.94351633333324,
+        "p50": 56.752,
+        "p90": 58.513000000000005,
+        "p95": 63.18105,
+        "p99": 96.10367,
+        "max": 138.384
+      },
+      "name": "litellm"
+    },
+    {
+      "target": "http://127.0.0.1:9300",
+      "rate": 500,
+      "stream": false,
+      "requests": 15001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 50.44577401506583,
+        "p50": 50.363,
+        "p90": 50.611,
+        "p95": 50.812,
+        "p99": 52.153,
+        "max": 59.799
+      },
+      "name": "direct"
+    },
+    {
+      "target": "http://127.0.0.1:8380",
+      "rate": 500,
+      "stream": false,
+      "requests": 15001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 50.88715272315188,
+        "p50": 50.752,
+        "p90": 51.156,
+        "p95": 51.493,
+        "p99": 54.299,
+        "max": 81.382
+      },
+      "name": "pitwall-dev"
+    },
+    {
+      "target": "http://127.0.0.1:8381",
+      "rate": 500,
+      "stream": false,
+      "requests": 15000,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 51.33714633333341,
+        "p50": 51.3,
+        "p90": 51.531,
+        "p95": 51.664,
+        "p99": 52.49602,
+        "max": 71.984
+      },
+      "name": "pitwall-full"
+    },
+    {
+      "target": "http://127.0.0.1:4000",
+      "rate": 500,
+      "stream": false,
+      "requests": 14828,
+      "failed_rate": 0.491839762611276,
+      "dropped": 173,
+      "ms": {
+        "avg": 1057.4514085513865,
+        "p50": 411.47299999999996,
+        "p90": 2009.5174000000002,
+        "p95": 2082.6683,
+        "p99": 13227.167899999993,
+        "max": 17721.877
+      },
+      "name": "litellm"
+    },
+    {
+      "target": "http://127.0.0.1:9300",
+      "rate": 100,
+      "stream": true,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 51.23624991669445,
+        "p50": 51.214,
+        "p90": 51.569,
+        "p95": 51.802,
+        "p99": 52.299,
+        "max": 56.636
+      },
+      "name": "direct"
+    },
+    {
+      "target": "http://127.0.0.1:8380",
+      "rate": 100,
+      "stream": true,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 51.90147584138625,
+        "p50": 51.846,
+        "p90": 52.363,
+        "p95": 52.639,
+        "p99": 53.639,
+        "max": 61.064
+      },
+      "name": "pitwall-dev"
+    },
+    {
+      "target": "http://127.0.0.1:8381",
+      "rate": 100,
+      "stream": true,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 52.72805898033986,
+        "p50": 52.642,
+        "p90": 53.326,
+        "p95": 53.624,
+        "p99": 54.775,
+        "max": 59.961
+      },
+      "name": "pitwall-full"
+    },
+    {
+      "target": "http://127.0.0.1:4000",
+      "rate": 100,
+      "stream": true,
+      "requests": 2579,
+      "failed_rate": 0,
+      "dropped": 421,
+      "ms": {
+        "avg": 2964.8618867778205,
+        "p50": 3124.794,
+        "p90": 5658.790599999999,
+        "p95": 5691.2904,
+        "p99": 5736.071959999999,
+        "max": 5818.46
+      },
+      "name": "litellm"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Phase 5 findings
+# Benchmark findings
 
 Two runs of the harness benchmark:
 
@@ -11,6 +11,49 @@ Two runs of the harness benchmark:
   [benchmark README](../README.md#dry-run-on-the-mock)). Token counts,
   costs, cache use, guard stops and task grouping are what the gateway
   measured; solve rates are set by the script.
+
+## Method
+
+**Tasks.** Twenty small Go repositories, standard library only, each with
+failing tests and a `TASK.md` saying what is wrong ([list](../README.md#tasks)).
+Several need more than one fix and two span two files. Each task fails as
+shipped and passes with a reference fix kept outside the agent's reach; CI
+checks both.
+
+**Agent.** Pitwall's own agent ([`agent/`](../../agent/agent.go)): five
+tools (list, read, write and edit files; run the tests), no shell, no
+retries, at most 30 calls and 8,192 output tokens per call. It sends
+`x-pitwall-task` and `x-pitwall-config` on every call. Using our own agent
+keeps every harness setting under control; the price is realism.
+
+**Configurations.** The real run varied the model and the harness:
+
+| Configuration | Model | Cache breakpoints | History |
+|---|---|---|---|
+| sonnet-full-nocache (baseline) | Sonnet 5.5 | off | full |
+| sonnet-full-cache | Sonnet 5.5 | on | full |
+| sonnet-trimmed-cache | Sonnet 5.5 | on | all but the newest 3 tool results trimmed, every call |
+| sonnet-trimmed-batch-cache | Sonnet 5.5 | on | the same, trim point moved 4 results at a time |
+| haiku-full-cache | Haiku 5.5 | on | full |
+| opus-full-cache | Opus 5.5 | on | full |
+
+**Runs.** Every configuration ran every task 3 times (360 runs), six at a
+time, in the order repeat, task, configuration, so all configurations saw a
+task at about the same moment. Each configuration had its own virtual key;
+all keys belonged to one team whose budget, $40, was enforced by the
+gateway.
+
+**Outcome.** When the agent stopped, the runner restored the task's original
+tests, ran them itself and reported that outcome; the agent's own verdict
+was recorded alongside (they agreed on all 360 runs).
+
+**Measures.** Cost is the gateway's price for each call (from the provider's
+reported usage and the published price table), summed per task. Cost per
+solved task is a configuration's total spend over the tasks it solved, so
+failed runs count against it; its 95% interval is a bootstrap over tasks,
+each resampled task bringing all its repeats. Solve rates get a 95% Wilson
+interval. Paired comparisons match runs of the same task and repeat, which
+removes task difficulty.
 
 ## Real models
 
@@ -48,10 +91,16 @@ works.
 
 With full history, the gateway's cache breakpoints cut Sonnet's total cost
 31% against the same runs without them (paired by task and repeat; cheaper
-on 59 of 60). That is less than the dry run's 53% because the real runs
-were shorter, 3.6 calls against 9: each run pays one cache write and gets
-only two or three reads. Output is now 56% of a cached Sonnet task's cost,
-so caching input can't take much more off tasks this short.
+on 59 of 60). On input alone the saving was 51%: the same prompts cost
+$0.34 instead of $0.69 across the 60 runs. The total falls less than in the
+dry run (53%) because the real runs were shorter, 3.6 calls against 9: each
+run pays one cache write and gets only two or three reads. Output is now
+56% of a cached Sonnet task's cost, so caching input can't take much more
+off tasks this short.
+
+Repeated context, the share of each prompt that an earlier call of the same
+task had already sent, was 53% of all input tokens across the real runs (83%
+in the nine-call dry run). That is the part caching can make cheap.
 
 ### 4. Trimming old tool output broke the conversation
 
@@ -140,6 +189,31 @@ caught at the 6th ($0.020 against $0.008 on the mock's prices). The fix is
 to compare a coarser signature of a result (the names of the failing tests
 rather than the whole output) and to treat a result that became a trim
 placeholder as unchanged.
+
+## Limitations
+
+- **The tasks are too easy for these models.** Every configuration solved
+  everything, so the benchmark ranks them on cost only. It can't yet show a
+  cheap model that needs more attempts, or a harness setting that costs
+  solves.
+- **Short runs.** Three to five calls per task, prompts under 6k tokens.
+  Long sessions, where caching and trimming matter most, aren't covered, and
+  the trimming configurations barely trimmed or broke.
+- **One agent, one language.** Pitwall's plain five-tool agent on Go fixes.
+  Agents with planning, a shell or their own context management would spend
+  differently.
+- **One provider, one day.** Claude models only, one run on 2026-11-24.
+  Prices are the published list prices in `config/prices.yaml`; the
+  gateway's per-call costs reproduce from token counts, but a provider's
+  invoice is the final word.
+- **Shared provider cache.** Every configuration reached Anthropic through
+  the same API key, so configurations on the same model could read each
+  other's cached tools and system prompt (about 1k tokens per call).
+- **Three repeats.** Enough for the paired comparisons, which cancel task
+  difficulty; solve-rate intervals are wide (94% to 100% at 60 of 60).
+- **The mock's numbers are mechanisms, not models.** The dry run's scripted
+  agent shows what caching, trimming and the guard do to cost; it says
+  nothing about how real models behave.
 
 ## What's next
 

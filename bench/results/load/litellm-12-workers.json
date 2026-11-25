@@ -1,0 +1,108 @@
+{
+  "delay_ms": 50,
+  "duration": "30s",
+  "runs": [
+    {
+      "target": "http://127.0.0.1:9300",
+      "rate": 100,
+      "stream": false,
+      "requests": 3000,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 50.604726666666664,
+        "p50": 50.491,
+        "p90": 51.0191,
+        "p95": 51.15705,
+        "p99": 51.56917,
+        "max": 65.255
+      },
+      "name": "direct"
+    },
+    {
+      "target": "http://127.0.0.1:4000",
+      "rate": 100,
+      "stream": false,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 58.44419926691088,
+        "p50": 57.418,
+        "p90": 59.999,
+        "p95": 64.168,
+        "p99": 83.27,
+        "max": 124.058
+      },
+      "name": "litellm-12w"
+    },
+    {
+      "target": "http://127.0.0.1:9300",
+      "rate": 500,
+      "stream": false,
+      "requests": 15000,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 50.400083466666636,
+        "p50": 50.349,
+        "p90": 50.537,
+        "p95": 50.66705,
+        "p99": 51.347010000000004,
+        "max": 60.593
+      },
+      "name": "direct"
+    },
+    {
+      "target": "http://127.0.0.1:4000",
+      "rate": 500,
+      "stream": false,
+      "requests": 14521,
+      "failed_rate": 0,
+      "dropped": 479,
+      "ms": {
+        "avg": 184.34397190276087,
+        "p50": 61.843,
+        "p90": 178.923,
+        "p95": 884.355,
+        "p99": 2666.4318,
+        "max": 3090.538
+      },
+      "name": "litellm-12w"
+    },
+    {
+      "target": "http://127.0.0.1:9300",
+      "rate": 100,
+      "stream": true,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 51.31752615794736,
+        "p50": 51.272,
+        "p90": 51.819,
+        "p95": 52.052,
+        "p99": 52.896,
+        "max": 59.838
+      },
+      "name": "direct"
+    },
+    {
+      "target": "http://127.0.0.1:4000",
+      "rate": 100,
+      "stream": true,
+      "requests": 3001,
+      "failed_rate": 0,
+      "dropped": 0,
+      "ms": {
+        "avg": 64.82656781072974,
+        "p50": 64.06,
+        "p90": 67.009,
+        "p95": 69.438,
+        "p99": 79.803,
+        "max": 150.528
+      },
+      "name": "litellm-12w"
+    }
+  ]
+}

@@ -143,6 +143,25 @@ measured; tokens, cost, caching, guard stops and inference are measured.
 Results: [`results/dry-run/results.md`](results/dry-run/results.md); what
 they show: [`results/findings.md`](results/findings.md).
 
+## Load test
+
+[`load/loadtest.js`](load/loadtest.js) is a k6 script for gateway overhead:
+a fixed rate of chat completions against the mock provider with a fixed
+delay, sent directly and through each proxy. [`load/run.py`](load/run.py)
+runs it for several targets and rates:
+
+```bash
+bin/mockprovider -addr 127.0.0.1:9300 -delay 50ms &
+MOCK_BASE_URL=http://127.0.0.1:9300 bin/gateway &    # dev mode, on :8080
+python3 bench/load/run.py --out /tmp/load --rates 100,500 \
+    direct=http://127.0.0.1:9300 pitwall=http://127.0.0.1:8080
+```
+
+Add `,KEY_ENV` to a target to send the token in that environment variable
+(a virtual key for a gateway with a database).
+
+Results, with LiteLLM as a baseline: [`results/load`](results/load/results.md).
+
 ## Caveats
 
 - The tasks are small, single-package Go fixes; long contexts and large

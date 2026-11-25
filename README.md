@@ -5,39 +5,91 @@ model call into the task it belongs to, and answers the question a
 per-request bill can't: **what does it cost to finish a task, and which model
 and harness setup does it cheapest?**
 
-> **Status: Phases 0–5 of 6 complete.** The proxy speaks both API formats,
-> every call carries a virtual key, a cost row and a budget check, calls are
-> grouped into agent tasks, the gateway adds prompt-cache breakpoints for
-> clients that don't, a guard stops agents stuck in a loop, and a harness
-> benchmark measures cost per solved task across models and agent setups.
-> The write-up is next (see [Roadmap](#roadmap)).
-
 ## Findings
 
-From the harness benchmark: 20 coding tasks, 6 configurations, 3 repeats,
-360 runs of Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5 through Pitwall, for
-$4.98 in total ([results](bench/results/claude/results.md),
-[findings](bench/results/findings.md)).
+I ran 20 coding tasks through Pitwall under 6 configurations, 3 times each:
+360 agent runs on Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5, for $4.98 in
+total. Pitwall priced every run as one task, and the benchmark checked every
+solve against the original tests.
 
-- **Every configuration solved every task**, so on these tasks the models
-  differ only in cost. Separating them on ability needs harder tasks.
-- **The cheapest capable model wins by an order of magnitude**: $0.0009 per
-  solved task on Haiku, $0.0128 on Sonnet, $0.0253 on Opus, all with
-  caching. Haiku used more calls and tokens and was still 14 times cheaper
-  than Sonnet.
-- **Prompt caching cut Sonnet's cost per task by 31%** (paired by task, cheaper
-  on 59 of 60), on tasks of only three or four calls.
-- **Trimming old tool output broke the conversation**: Sonnet's signed
-  thinking blocks are bound to the history before them, so editing an
-  earlier tool result made the API refuse the next call in 27 of 60 runs.
-  On the mock, trimming every turn also cost 51% more than keeping the
-  history, because each trim invalidates the prompt cache.
-- **The guard and task grouping held up**: no warnings or stops on 360
-  normal runs, and inference grouped every run into exactly one task. On
-  the mock the guard stopped all 20 seeded loops, 8 of them only at the
-  11th call instead of the 6th.
+| Configuration | Solved | Cost per solved task | vs. Sonnet, no caching |
+|---|---|---|---|
+| Haiku 5.5, cache breakpoints | 60/60 | **$0.0009** | -95% |
+| Sonnet 5.5, cache breakpoints | 60/60 | $0.0128 | -31% |
+| Sonnet 5.5, cache breakpoints, history trimmed in batches | 60/60 | $0.0126 | -32% |
+| Sonnet 5.5, cache breakpoints, history trimmed every turn | 60/60 | $0.0130 | -30% (27 runs hit API errors) |
+| Sonnet 5.5, no caching | 60/60 | $0.0185 | baseline |
+| Opus 5.5, cache breakpoints | 60/60 | $0.0253 | +37% |
 
-![Cost per solved task](bench/results/claude/charts/cost_per_solved.svg)
+![Cost per solved task by configuration](bench/results/claude/charts/cost_per_solved.svg)
+
+1. **Every configuration solved every task**, so on these tasks the models
+   differ only in cost, and the cheapest one that can do the job wins by an
+   order of magnitude: Haiku used more calls and tokens than Sonnet and was
+   still 14 times cheaper per solved task, and 28 times cheaper than Opus.
+   Telling the models apart on ability needs harder tasks.
+2. **Cache breakpoints cut Sonnet's cost per task by 31%** (half its input
+   cost), on tasks of only three or four calls, with no change to the agent:
+   the gateway adds the markers.
+3. **Trimming old tool output, the usual way to keep an agent's context
+   small, backfired twice.** On the mock it cost 51% more than keeping the
+   history, because every trim invalidates the prompt cache. On Sonnet it
+   broke the conversation: thinking blocks are signed against the history
+   before them, so editing an earlier tool result made the API refuse the
+   next call in 27 of 60 runs. More in the
+   [blog post](docs/blog/trimming-agent-history.md).
+4. **The guard and task grouping held up.** No warnings or stops on 360
+   normal runs; Pitwall's inference put every run in exactly one task
+   without being told. On the mock, the guard stopped all 20 seeded loops.
+
+Method, every configuration and the limitations:
+[bench/results/findings.md](bench/results/findings.md). Raw runs and
+per-run diffs: [bench/results/claude](bench/results/claude/results.md).
+
+### The numbers
+
+| Measure | Result | How |
+|---|---|---|
+| Cost per solved task | $0.0009 (Haiku) to $0.0253 (Opus) | 20 tasks x 6 configurations x 3 repeats, real models |
+| Cache savings | 31% of cost, 51% of input cost (Sonnet); 53% on a 9-call scripted agent | same tasks, breakpoints off and on, paired |
+| Runaway-loop catch rate | 30 of 30 seeded loops stopped; 0 false stops in 560 normal runs | seeded loops on the mock (Phase 4 and dry run) vs real and scripted normal runs |
+| Task inference accuracy | 100% (560 of 560 runs) | inferred task vs the `x-pitwall-task` header on benchmark runs |
+| Repeated context | 53% of input tokens | tokens an earlier call of the same task already sent |
+| Gateway overhead | +0.6 ms p50, +1.1 ms p99 as a bare proxy; +1.7 / +5.1 ms with keys, budgets and task tracking; LiteLLM +6.9 / +31.7 ms (12 workers) | k6 against the mock with a fixed 50 ms delay; [results](bench/results/load/results.md) |
+
+## Demo
+
+An agent fixes a bug through Pitwall on Claude Haiku, the task shows up
+priced call by call, then a seeded loop is warned twice and stopped by the
+guard. Recorded from a real run with [`scripts/demo.py`](scripts/demo.py)
+(about 30 seconds; the Haiku task cost $0.0013):
+
+![Pitwall demo](docs/demo.svg)
+
+The same runs on the Grafana dashboard, next to the benchmark's 360 tasks
+and cost per solved task by configuration:
+
+![Grafana task dashboard](docs/images/grafana-tasks.jpg)
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Coding agent] -->|OpenAI or Anthropic format,<br/>virtual key| G[Pitwall]
+    G -->|same or translated format| P[OpenAI / Anthropic /<br/>Ollama]
+    G <--> R[(Redis<br/>tasks, budgets)]
+    G -.->|async| D[(Postgres<br/>calls, tasks)]
+    G -.->|async| L[Langfuse<br/>trace per task]
+    D --> F[Grafana]
+```
+
+For each call Pitwall checks the virtual key, adds prompt-cache breakpoints
+where the client didn't, assigns the call to a task (by header, or inferred
+from the conversation), runs the runaway guard, reserves the worst-case cost
+against the budget, forwards it (translating formats if needed), and settles
+the real cost. Records are written after the response. Details:
+[docs/architecture.md](docs/architecture.md) and the design notes in
+[docs/decisions](docs/decisions).
 
 ## What works today
 
@@ -354,12 +406,13 @@ bench/tasks/          benchmark tasks: tiny repos with failing tests
 bench/solutions/      reference fixes, kept out of the agent's reach
 bench/plans/          benchmark plans: configurations, repeats, budget
 bench/run.py          benchmark runner; analyze.py turns runs into a report
+bench/load/           k6 load test for gateway overhead
 bench/experiments/    measurement scripts
-bench/results/        measured results
+bench/results/        measured results and findings
 config/               gateway config and price table
 deploy/               docker-compose.yml, Postgres init, Prometheus, Grafana
-docs/decisions/       design notes
-scripts/              SDK smoke test
+docs/                 architecture, design notes, blog post, demo recording
+scripts/              SDK smoke test, demo
 ```
 
 ## Roadmap
@@ -372,4 +425,8 @@ scripts/              SDK smoke test
 | 3 | Task traces: `x-pitwall-task` header, inferred tasks, Langfuse, Grafana task panel | done |
 | 4 | Automatic prompt-cache breakpoints (switchable per key); runaway-agent guard | done |
 | 5 | Harness benchmark: ~20 coding tasks × configurations × 3 repeats | done |
-| 6 | Write-up: findings, blog post, demo | |
+| 6 | Write-up: findings, blog post, demo | done |
+
+Next, from the findings: a harder task tier so solve rates differ, trimming
+that keeps signed thinking blocks valid, and the guard fix for the two loop
+patterns it catches late.
